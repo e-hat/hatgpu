@@ -36,8 +36,10 @@ class HelloTriangle
     void initWindow();
     void initVulkan();
     void createInstance();
+    void setupDebugMessenger();
 
     VkInstance mInstance;
+    VkDebugUtilsMessengerEXT mDebugMessenger;
 };
 }  // namespace efvk
 #endif

@@ -44,3 +44,5 @@ target_link_libraries(efvk PRIVATE imgui)
 find_package(Vulkan REQUIRED)
 target_link_libraries(efvk PRIVATE ${Vulkan_LIBRARIES})
 target_include_directories(efvk PRIVATE ${Vulkan_INCLUDE_DIRS})
+
+target_compile_definitions(efvk PRIVATE DEBUG)
