@@ -10,16 +10,23 @@ set(DEPS ${PROJECT_SOURCE_DIR}/deps)
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR}/src)
 file(GLOB_RECURSE SOURCES ${SOURCE_DIR}/**/*.cpp)
 file(GLOB TOPLEVEL_SOURCES ${SOURCE_DIR}/*.cpp)
-set(SOURCES ${SOURCES} ${TOPLEVEL_SOURCES})
+set(SOURCES ${SOURCES} ${SOURCE_DIR}/main.cpp
+        ${SOURCE_DIR}/application/HelloTriangle.h
+        ${SOURCE_DIR}/application/HelloTriangle.cpp
+        ${SOURCE_DIR}/application/InputManager.h
+        ${SOURCE_DIR}/application/InputManager.cpp
+        ${SOURCE_DIR}/util/Time.h
+        ${SOURCE_DIR}/util/Time.cpp
+        ${SOURCE_DIR}/scene/Camera.h)
 add_executable(efvk ${SOURCES})
 
 set(INCLUDES ${SOURCE_DIR})
-set(INCLUDES ${INCLUDES} 
-  ${DEPS}/assimp/include
-  ${DEPS}/glfw/include
-  ${DEPS}/glm
-  ${DEPS}/imgui
-  ${DEPS}/stb)
+set(INCLUDES ${INCLUDES}
+        ${DEPS}/assimp/include
+        ${DEPS}/glfw/include
+        ${DEPS}/glm
+        ${DEPS}/imgui
+        ${DEPS}/stb)
 target_include_directories(efvk PRIVATE ${INCLUDES})
 
 add_subdirectory(deps/assimp)

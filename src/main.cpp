@@ -1,7 +1,9 @@
-#include <iostream>
+#include "application/HelloTriangle.h"
 
-int main(int argc, char **argv) {
-    std::cout << "Hello world!\n";
+int main()
+{
+    efvk::HelloTriangle app("Hello world!");
+    app.Run();
 
     return 0;
 }
