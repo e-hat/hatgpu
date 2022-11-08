@@ -4,8 +4,8 @@
 #include "application/InputManager.h"
 #include "util/Time.h"
 
+#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-#include <vulkan/vulkan.hpp>
 
 #include <string>
 
@@ -30,9 +30,10 @@ class HelloTriangle
     InputManager mInputManager;
     Time mTime;
     Camera mCamera;
+    std::string mWindowName;
 
   private:
-    void initWindow(const std::string &windowName);
+    void initWindow();
     void initVulkan();
     void createInstance();
 
