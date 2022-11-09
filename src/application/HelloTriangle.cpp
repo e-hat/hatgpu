@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <iostream>
+#include <optional>
 #include <vector>
 
 namespace efvk
@@ -118,6 +119,48 @@ void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &create
                              VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     createInfo.pfnUserCallback = debugCallback;
 }
+
+struct QueueFamilyIndices
+{
+    std::optional<uint32_t> graphicsFamily;
+
+    bool IsComplete() { return graphicsFamily.has_value(); }
+};
+QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice &device)
+{
+    QueueFamilyIndices indices{};
+
+    uint32_t queueFamilyCount;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+    uint32_t i = 0;
+    for (const auto &queueFamily : queueFamilies)
+    {
+        // TODO: query the compute queue family index.
+        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+        {
+            indices.graphicsFamily = i;
+        }
+
+        if (indices.IsComplete())
+        {
+            break;
+        }
+
+        ++i;
+    }
+
+    return indices;
+}
+
+bool isDeviceSuitable(const VkPhysicalDevice &device)
+{
+    QueueFamilyIndices indices = findQueueFamilies(device);
+
+    return indices.IsComplete();
+}
 }  // namespace
 
 HelloTriangle::HelloTriangle(const std::string &windowName)
@@ -147,6 +190,7 @@ void HelloTriangle::initVulkan()
 {
     createInstance();
     setupDebugMessenger();
+    pickPhysicalDevice();
 }
 
 void HelloTriangle::Init() {}
@@ -241,11 +285,37 @@ void HelloTriangle::setupDebugMessenger()
     }
 }
 
+void HelloTriangle::pickPhysicalDevice()
+{
+    uint32_t candidateDeviceCount = 0;
+    vkEnumeratePhysicalDevices(mInstance, &candidateDeviceCount, nullptr);
+    if (candidateDeviceCount == 0)
+    {
+        throw std::runtime_error("Failed to find GPUs with Vulkan support");
+    }
+    std::vector<VkPhysicalDevice> candidateDevices(candidateDeviceCount);
+    vkEnumeratePhysicalDevices(mInstance, &candidateDeviceCount, candidateDevices.data());
+
+    for (const auto &candidate : candidateDevices)
+    {
+        if (isDeviceSuitable(candidate))
+        {
+            mPhysicalDevice = candidate;
+            break;
+        }
+    }
+
+    if (mPhysicalDevice == VK_NULL_HANDLE)
+    {
+        throw std::runtime_error("Failed to find a suitable GPU");
+    }
+}
+
 HelloTriangle::~HelloTriangle()
 {
     if constexpr (kEnableValidationLayers)
     {
-        // DestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr);
+        DestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr);
     }
 
     vkDestroyInstance(mInstance, nullptr);

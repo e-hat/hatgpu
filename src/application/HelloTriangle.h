@@ -17,6 +17,9 @@ class HelloTriangle
     HelloTriangle(const std::string &windowName);
     ~HelloTriangle();
 
+    HelloTriangle(const HelloTriangle &other)            = delete;
+    HelloTriangle &operator=(const HelloTriangle &other) = delete;
+
     void Init();
     void Exit();
 
@@ -35,10 +38,13 @@ class HelloTriangle
   private:
     void initWindow();
     void initVulkan();
+
     void createInstance();
     void setupDebugMessenger();
+    void pickPhysicalDevice();
 
     VkInstance mInstance;
+    VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT mDebugMessenger;
 };
 }  // namespace efvk
