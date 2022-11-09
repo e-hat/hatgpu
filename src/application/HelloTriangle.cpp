@@ -69,7 +69,10 @@ debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
               const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
               void *pUserData)
 {
-    std::cerr << "Validation layer: " << pCallbackData->pMessage << '\n';
+    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+    {
+        std::cerr << "Validation layer: " << pCallbackData->pMessage << '\n';
+    }
 
     return VK_FALSE;
 }
@@ -205,7 +208,6 @@ void HelloTriangle::createInstance()
     const auto extensions              = getRequiredExtensions();
     createInfo.enabledExtensionCount   = static_cast<uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
-    createInfo.enabledLayerCount       = 0;
 
     if (vkCreateInstance(&createInfo, nullptr, &mInstance) != VK_SUCCESS)
     {
@@ -243,7 +245,7 @@ HelloTriangle::~HelloTriangle()
 {
     if constexpr (kEnableValidationLayers)
     {
-        DestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr);
+        // DestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr);
     }
 
     vkDestroyInstance(mInstance, nullptr);
