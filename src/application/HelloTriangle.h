@@ -7,6 +7,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <optional>
 #include <string>
 
 namespace efvk
@@ -36,11 +37,22 @@ class HelloTriangle
     std::string mWindowName;
 
   private:
+    struct QueueFamilyIndices
+    {
+        std::optional<uint32_t> graphicsFamily;
+        std::optional<uint32_t> presentFamily;
+
+        bool IsComplete() { return graphicsFamily.has_value() && presentFamily.has_value(); }
+    };
+    QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice &device);
+    bool isDeviceSuitable(const VkPhysicalDevice &device);
+
     void initWindow();
     void initVulkan();
 
     void createInstance();
     void setupDebugMessenger();
+    void createSurface();
     void pickPhysicalDevice();
     void createLogicalDevice();
 
@@ -48,7 +60,10 @@ class HelloTriangle
     VkDebugUtilsMessengerEXT mDebugMessenger;
     VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
     VkDevice mDevice;
+    VkSurfaceKHR mSurface;
+
     VkQueue mGraphicsQueue;
+    VkQueue mPresentQueue;
 };
 }  // namespace efvk
 #endif
