@@ -42,10 +42,13 @@ class HelloTriangle
     void createInstance();
     void setupDebugMessenger();
     void pickPhysicalDevice();
+    void createLogicalDevice();
 
     VkInstance mInstance;
-    VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT mDebugMessenger;
+    VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
+    VkDevice mDevice;
+    VkQueue mGraphicsQueue;
 };
 }  // namespace efvk
 #endif

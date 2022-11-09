@@ -191,6 +191,7 @@ void HelloTriangle::initVulkan()
     createInstance();
     setupDebugMessenger();
     pickPhysicalDevice();
+    createLogicalDevice();
 }
 
 void HelloTriangle::Init() {}
@@ -311,8 +312,44 @@ void HelloTriangle::pickPhysicalDevice()
     }
 }
 
+void HelloTriangle::createLogicalDevice()
+{
+    QueueFamilyIndices indices = findQueueFamilies(mPhysicalDevice);
+
+    VkDeviceQueueCreateInfo queueCreateInfo{};
+    queueCreateInfo.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queueCreateInfo.queueFamilyIndex = *indices.graphicsFamily;
+    queueCreateInfo.queueCount       = 1;
+    float queuePriority              = 1.0f;
+    queueCreateInfo.pQueuePriorities = &queuePriority;
+
+    VkPhysicalDeviceFeatures deviceFeatures{};
+
+    VkDeviceCreateInfo createInfo{};
+    createInfo.sType                = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    createInfo.pQueueCreateInfos    = &queueCreateInfo;
+    createInfo.queueCreateInfoCount = 1;
+    createInfo.pEnabledFeatures     = &deviceFeatures;
+
+    createInfo.enabledExtensionCount = 0;
+    if constexpr (kEnableValidationLayers)
+    {
+        createInfo.enabledLayerCount   = static_cast<uint32_t>(kValidationLayers.size());
+        createInfo.ppEnabledLayerNames = kValidationLayers.data();
+    }
+
+    if (vkCreateDevice(mPhysicalDevice, &createInfo, nullptr, &mDevice) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Unable to create logical device");
+    }
+
+    vkGetDeviceQueue(mDevice, *indices.graphicsFamily, 0, &mGraphicsQueue);
+}
+
 HelloTriangle::~HelloTriangle()
 {
+    vkDestroyDevice(mDevice, nullptr);
+
     if constexpr (kEnableValidationLayers)
     {
         DestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr);
