@@ -45,7 +45,7 @@ void InputManager::mouse_callback(GLFWwindow *window, double xpos, double ypos)
 
 // glfw: whenever the mouse scroll wheel scrolls, this callback is called
 // ----------------------------------------------------------------------
-void InputManager::scroll_callback(GLFWwindow *window, double xoffset, double yoffset)
+void InputManager::scroll_callback(GLFWwindow *window, double /*xoffset*/, double yoffset)
 {
     InputManager *manager = static_cast<InputManager *>(glfwGetWindowUserPointer(window));
     manager->mCamera->ProcessMouseScroll(static_cast<float>(yoffset));

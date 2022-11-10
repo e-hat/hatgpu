@@ -52,14 +52,14 @@ class Camera
            float pitch        = PITCH,
            float near         = 0.1f,
            float far          = 100.0f)
-        : ScreenWidth(screenWidth),
+        : Front(glm::vec3(0.0f, 0.0f, -1.0f)),
+          Near(near),
+          Far(far),
+          ScreenWidth(screenWidth),
           ScreenHeight(screenHeight),
-          Front(glm::vec3(0.0f, 0.0f, -1.0f)),
           MovementSpeed(SPEED),
           MouseSensitivity(SENSITIVITY),
-          Zoom(ZOOM),
-          Near(near),
-          Far(far)
+          Zoom(ZOOM)
     {
         Position = position;
         WorldUp  = up;

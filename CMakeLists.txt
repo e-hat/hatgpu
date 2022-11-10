@@ -46,3 +46,5 @@ target_link_libraries(efvk PRIVATE ${Vulkan_LIBRARIES})
 target_include_directories(efvk PRIVATE ${Vulkan_INCLUDE_DIRS})
 
 target_compile_definitions(efvk PRIVATE DEBUG)
+
+target_compile_options(efvk PRIVATE -Wall -Wextra -Werror)
