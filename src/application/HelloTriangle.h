@@ -34,7 +34,7 @@ class HelloTriangle
     Time mTime;
     Camera mCamera;
     std::string mWindowName;
-    std::vector<VkImage> mSwapchainImages;
+    std::vector<VkImageView> mSwapchainImageViews;
 
   private:
     void initWindow();
@@ -46,6 +46,7 @@ class HelloTriangle
     void pickPhysicalDevice();
     void createLogicalDevice();
     void createSwapchain();
+    void createSwapchainImageViews();
 
     VkInstance mInstance;
     VkDebugUtilsMessengerEXT mDebugMessenger;
@@ -55,6 +56,7 @@ class HelloTriangle
     VkSwapchainKHR mSwapchain;
     VkFormat mSwapchainImageFormat;
     VkExtent2D mSwapchainExtent;
+    std::vector<VkImage> mSwapchainImages;
 
     VkQueue mGraphicsQueue;
     VkQueue mPresentQueue;

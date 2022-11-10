@@ -202,12 +202,12 @@ SwapchainSupportDetails querySwapchainSupport(const VkPhysicalDevice &device,
 
     uint32_t formatCount = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
-    details.formats = std::vector<VkSurfaceFormatKHR>(formatCount);
+    details.formats.resize(formatCount);
     vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, details.formats.data());
 
     uint32_t presentModeCount = 0;
     vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
-    details.presentModes = std::vector<VkPresentModeKHR>(presentModeCount);
+    details.presentModes.resize(presentModeCount);
     vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount,
                                               details.presentModes.data());
 
@@ -312,6 +312,7 @@ void HelloTriangle::initVulkan()
     pickPhysicalDevice();
     createLogicalDevice();
     createSwapchain();
+    createSwapchainImageViews();
 }
 
 void HelloTriangle::Init() {}
@@ -535,15 +536,51 @@ void HelloTriangle::createSwapchain()
     }
 
     vkGetSwapchainImagesKHR(mDevice, mSwapchain, &imageCount, nullptr);
-    mSwapchainImages = std::vector<VkImage>(imageCount);
+    mSwapchainImages.resize(imageCount);
     vkGetSwapchainImagesKHR(mDevice, mSwapchain, &imageCount, mSwapchainImages.data());
 
     mSwapchainImageFormat = surfaceFormat.format;
     mSwapchainExtent      = extent;
 }
 
+void HelloTriangle::createSwapchainImageViews()
+{
+    mSwapchainImageViews.resize(mSwapchainImages.size());
+
+    for (size_t i = 0; i < mSwapchainImages.size(); ++i)
+    {
+        VkImageViewCreateInfo createInfo{};
+        createInfo.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        createInfo.image    = mSwapchainImages[i];
+        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        createInfo.format   = mSwapchainImageFormat;
+
+        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+        createInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        createInfo.subresourceRange.baseMipLevel   = 0;
+        createInfo.subresourceRange.levelCount     = 1;
+        createInfo.subresourceRange.baseArrayLayer = 0;
+        createInfo.subresourceRange.layerCount     = 1;
+
+        if (vkCreateImageView(mDevice, &createInfo, nullptr, &mSwapchainImageViews[i]) !=
+            VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to create swapchain image view");
+        }
+    }
+}
+
 HelloTriangle::~HelloTriangle()
 {
+    for (const auto imageView : mSwapchainImageViews)
+    {
+        vkDestroyImageView(mDevice, imageView, nullptr);
+    }
+
     vkDestroySwapchainKHR(mDevice, mSwapchain, nullptr);
     vkDestroyDevice(mDevice, nullptr);
     if constexpr (kEnableValidationLayers)
