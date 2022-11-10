@@ -7,7 +7,6 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include <optional>
 #include <string>
 
 namespace efvk
@@ -35,18 +34,9 @@ class HelloTriangle
     Time mTime;
     Camera mCamera;
     std::string mWindowName;
+    std::vector<VkImage> mSwapchainImages;
 
   private:
-    struct QueueFamilyIndices
-    {
-        std::optional<uint32_t> graphicsFamily;
-        std::optional<uint32_t> presentFamily;
-
-        bool IsComplete() { return graphicsFamily.has_value() && presentFamily.has_value(); }
-    };
-    QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice &device);
-    bool isDeviceSuitable(const VkPhysicalDevice &device);
-
     void initWindow();
     void initVulkan();
 
@@ -55,12 +45,16 @@ class HelloTriangle
     void createSurface();
     void pickPhysicalDevice();
     void createLogicalDevice();
+    void createSwapchain();
 
     VkInstance mInstance;
     VkDebugUtilsMessengerEXT mDebugMessenger;
     VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
     VkDevice mDevice;
     VkSurfaceKHR mSurface;
+    VkSwapchainKHR mSwapchain;
+    VkFormat mSwapchainImageFormat;
+    VkExtent2D mSwapchainExtent;
 
     VkQueue mGraphicsQueue;
     VkQueue mPresentQueue;
