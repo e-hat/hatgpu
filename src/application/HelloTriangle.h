@@ -47,6 +47,8 @@ class HelloTriangle
     void createLogicalDevice();
     void createSwapchain();
     void createSwapchainImageViews();
+    void createRenderPass();
+    void createGraphicsPipeline();
 
     VkInstance mInstance;
     VkDebugUtilsMessengerEXT mDebugMessenger;
@@ -57,6 +59,13 @@ class HelloTriangle
     VkFormat mSwapchainImageFormat;
     VkExtent2D mSwapchainExtent;
     std::vector<VkImage> mSwapchainImages;
+
+    VkRenderPass mRenderPass;
+    VkPipelineLayout mPipelineLayout;
+    VkPipeline mGraphicsPipeline;
+
+    VkShaderModule mVertShaderModule;
+    VkShaderModule mFragShaderModule;
 
     VkQueue mGraphicsQueue;
     VkQueue mPresentQueue;
