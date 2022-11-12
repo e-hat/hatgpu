@@ -52,7 +52,45 @@ void HelloTriangle::Exit()
     vkDestroyRenderPass(mDevice, mRenderPass, nullptr);
 }
 
-void HelloTriangle::OnRender() {}
+void HelloTriangle::OnRender()
+{
+    vkResetCommandBuffer(mCommandBuffer, 0);
+    recordCommandBuffer(mCommandBuffer, mCurrentImageIndex);
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+    std::array<VkSemaphore, 1> waitSemaphores      = {mImageAvailable};
+    std::array<VkPipelineStageFlags, 1> waitStages = {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    submitInfo.waitSemaphoreCount = waitSemaphores.size();
+    submitInfo.pWaitSemaphores    = waitSemaphores.data();
+    submitInfo.pWaitDstStageMask  = waitStages.data();
+
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers    = &mCommandBuffer;
+
+    std::array<VkSemaphore, 1> signalSemaphores = {mRenderFinished};
+    submitInfo.signalSemaphoreCount             = signalSemaphores.size();
+    submitInfo.pSignalSemaphores                = signalSemaphores.data();
+
+    if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mInFlight) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to submit draw command buffer");
+    }
+
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores    = signalSemaphores.data();
+
+    std::array<VkSwapchainKHR, 1> swapchains = {mSwapchain};
+    presentInfo.swapchainCount               = 1;
+    presentInfo.pSwapchains                  = swapchains.data();
+    presentInfo.pImageIndices                = &mCurrentImageIndex;
+    vkQueuePresentKHR(mPresentQueue, &presentInfo);
+}
 void HelloTriangle::OnImGuiRender() {}
 
 void HelloTriangle::createGraphicsPipeline()
@@ -201,8 +239,19 @@ void HelloTriangle::createRenderPass()
     colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.pColorAttachments = &colorAttachmentRef;
+    subpass.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments    = &colorAttachmentRef;
+
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+
+    dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+
+    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -210,6 +259,8 @@ void HelloTriangle::createRenderPass()
     renderPassInfo.pAttachments    = &colorAttachment;
     renderPassInfo.subpassCount    = 1;
     renderPassInfo.pSubpasses      = &subpass;
+    renderPassInfo.subpassCount    = 1;
+    renderPassInfo.pDependencies   = &dependency;
 
     if (vkCreateRenderPass(mDevice, &renderPassInfo, nullptr, &mRenderPass) != VK_SUCCESS)
     {

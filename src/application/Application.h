@@ -4,6 +4,7 @@
 #include "application/InputManager.h"
 #include "util/Time.h"
 
+#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.hpp>
 
@@ -63,6 +64,10 @@ class Application
 
     VkQueue mGraphicsQueue;
     VkQueue mPresentQueue;
+    VkSemaphore mImageAvailable;
+    VkSemaphore mRenderFinished;
+    VkFence mInFlight;
+    uint32_t mCurrentImageIndex;
 
     VkShaderModule createShaderModule(const std::vector<char> &code);
 
@@ -78,6 +83,7 @@ class Application
     void createLogicalDevice();
     void createSwapchain();
     void createSwapchainImageViews();
+    void createSyncObjects();
 };
 }  // namespace efvk
 #endif

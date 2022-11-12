@@ -252,6 +252,7 @@ void Application::initVulkan()
     createLogicalDevice();
     createSwapchain();
     createSwapchainImageViews();
+    createSyncObjects();
 }
 
 void Application::Run()
@@ -261,12 +262,20 @@ void Application::Run()
     while (!glfwWindowShouldClose(mWindow))
     {
         mInputManager.ProcessInput(mWindow, mTime.GetDeltaTime());
+
+        vkWaitForFences(mDevice, 1, &mInFlight, VK_TRUE, std::numeric_limits<uint64_t>::max());
+        vkResetFences(mDevice, 1, &mInFlight);
+        vkAcquireNextImageKHR(mDevice, mSwapchain, std::numeric_limits<uint64_t>::max(),
+                              mImageAvailable, VK_NULL_HANDLE, &mCurrentImageIndex);
+
         OnRender();
+
         OnImGuiRender();
 
         glfwSwapBuffers(mWindow);
     }
 
+    vkDeviceWaitIdle(mDevice);
     Exit();
 }
 
@@ -603,8 +612,29 @@ VkShaderModule Application::createShaderModule(const std::vector<char> &code)
     return shaderModule;
 }
 
+void Application::createSyncObjects()
+{
+    VkSemaphoreCreateInfo semaphoreCreateInfo{};
+    semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    VkFenceCreateInfo fenceCreateInfo{};
+    fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+    if (vkCreateSemaphore(mDevice, &semaphoreCreateInfo, nullptr, &mImageAvailable) != VK_SUCCESS ||
+        vkCreateSemaphore(mDevice, &semaphoreCreateInfo, nullptr, &mRenderFinished) != VK_SUCCESS ||
+        vkCreateFence(mDevice, &fenceCreateInfo, nullptr, &mInFlight) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create sync objects");
+    }
+}
+
 Application::~Application()
 {
+    vkDestroySemaphore(mDevice, mImageAvailable, nullptr);
+    vkDestroySemaphore(mDevice, mRenderFinished, nullptr);
+    vkDestroyFence(mDevice, mInFlight, nullptr);
+
     for (const auto imageView : mSwapchainImageViews)
     {
         vkDestroyImageView(mDevice, imageView, nullptr);
