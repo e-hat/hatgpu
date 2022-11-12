@@ -1,74 +1,34 @@
 #ifndef _INCLUDE_HELLOTRIANGLE_H
 #define _INCLUDE_HELLOTRIANGLE_H
 
-#include "application/InputManager.h"
-#include "util/Time.h"
-
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-
-#include <string>
+#include "application/Application.h"
 
 namespace efvk
 {
-class HelloTriangle
+
+class HelloTriangle : public Application
 {
   public:
-    HelloTriangle(const std::string &windowName);
-    ~HelloTriangle();
+    HelloTriangle();
 
-    HelloTriangle(const HelloTriangle &other)            = delete;
-    HelloTriangle &operator=(const HelloTriangle &other) = delete;
+    virtual void Init() override;
+    virtual void Exit() override;
 
-    void Init();
-    void Exit();
-
-    void OnRender();
-    void OnImGuiRender();
-
-    void Run();
-
-  protected:
-    GLFWwindow *mWindow;
-    InputManager mInputManager;
-    Time mTime;
-    Camera mCamera;
-    std::string mWindowName;
-    std::vector<VkImageView> mSwapchainImageViews;
+    virtual void OnRender() override;
+    virtual void OnImGuiRender() override;
 
   private:
-    void initWindow();
-    void initVulkan();
-
-    void createInstance();
-    void setupDebugMessenger();
-    void createSurface();
-    void pickPhysicalDevice();
-    void createLogicalDevice();
-    void createSwapchain();
-    void createSwapchainImageViews();
     void createRenderPass();
     void createGraphicsPipeline();
-
-    VkInstance mInstance;
-    VkDebugUtilsMessengerEXT mDebugMessenger;
-    VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
-    VkDevice mDevice;
-    VkSurfaceKHR mSurface;
-    VkSwapchainKHR mSwapchain;
-    VkFormat mSwapchainImageFormat;
-    VkExtent2D mSwapchainExtent;
-    std::vector<VkImage> mSwapchainImages;
+    void createCommandPool();
+    void createCommandBuffer();
+    void recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex);
 
     VkRenderPass mRenderPass;
     VkPipelineLayout mPipelineLayout;
     VkPipeline mGraphicsPipeline;
-
-    VkShaderModule mVertShaderModule;
-    VkShaderModule mFragShaderModule;
-
-    VkQueue mGraphicsQueue;
-    VkQueue mPresentQueue;
 };
+
 }  // namespace efvk
+
 #endif

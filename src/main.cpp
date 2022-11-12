@@ -2,7 +2,7 @@
 
 int main()
 {
-    efvk::HelloTriangle app("Hello world!");
+    efvk::HelloTriangle app;
     app.Run();
 
     return 0;

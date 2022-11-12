@@ -11,6 +11,8 @@ set(SOURCE_DIR ${PROJECT_SOURCE_DIR}/src)
 file(GLOB_RECURSE SOURCES ${SOURCE_DIR}/**/*.cpp)
 file(GLOB TOPLEVEL_SOURCES ${SOURCE_DIR}/*.cpp)
 set(SOURCES ${SOURCES} ${SOURCE_DIR}/main.cpp
+        ${SOURCE_DIR}/application/Application.h
+        ${SOURCE_DIR}/application/Application.cpp
         ${SOURCE_DIR}/application/HelloTriangle.h
         ${SOURCE_DIR}/application/HelloTriangle.cpp
         ${SOURCE_DIR}/application/InputManager.h
