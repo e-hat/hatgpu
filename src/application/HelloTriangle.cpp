@@ -34,14 +34,10 @@ void HelloTriangle::Init()
     createRenderPass();
     createGraphicsPipeline();
     createFramebuffers(mRenderPass);
-    createCommandPool();
-    createCommandBuffer();
 }
 
 void HelloTriangle::Exit()
 {
-    vkDestroyCommandPool(mDevice, mCommandPool, nullptr);
-
     for (auto framebuffer : mSwapchainFramebuffers)
     {
         vkDestroyFramebuffer(mDevice, framebuffer, nullptr);
@@ -54,13 +50,13 @@ void HelloTriangle::Exit()
 
 void HelloTriangle::OnRender()
 {
-    vkResetCommandBuffer(mCommandBuffer, 0);
-    recordCommandBuffer(mCommandBuffer, mCurrentImageIndex);
+    vkResetCommandBuffer(mCommandBuffers[mCurrentFrameIndex], 0);
+    recordCommandBuffer(mCommandBuffers[mCurrentFrameIndex], mCurrentImageIndex);
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    std::array<VkSemaphore, 1> waitSemaphores      = {mImageAvailable};
+    std::array<VkSemaphore, 1> waitSemaphores = {mImageAvailableSemaphores[mCurrentFrameIndex]};
     std::array<VkPipelineStageFlags, 1> waitStages = {
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     submitInfo.waitSemaphoreCount = waitSemaphores.size();
@@ -68,13 +64,14 @@ void HelloTriangle::OnRender()
     submitInfo.pWaitDstStageMask  = waitStages.data();
 
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers    = &mCommandBuffer;
+    submitInfo.pCommandBuffers    = &mCommandBuffers[mCurrentFrameIndex];
 
-    std::array<VkSemaphore, 1> signalSemaphores = {mRenderFinished};
+    std::array<VkSemaphore, 1> signalSemaphores = {mRenderFinishedSemaphores[mCurrentFrameIndex]};
     submitInfo.signalSemaphoreCount             = signalSemaphores.size();
     submitInfo.pSignalSemaphores                = signalSemaphores.data();
 
-    if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mInFlight) != VK_SUCCESS)
+    if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mInFlightFences[mCurrentFrameIndex]) !=
+        VK_SUCCESS)
     {
         throw std::runtime_error("Failed to submit draw command buffer");
     }
@@ -265,35 +262,6 @@ void HelloTriangle::createRenderPass()
     if (vkCreateRenderPass(mDevice, &renderPassInfo, nullptr, &mRenderPass) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to create render pass");
-    }
-}
-
-void HelloTriangle::createCommandPool()
-{
-    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(mPhysicalDevice, mSurface);
-
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    poolInfo.queueFamilyIndex = *queueFamilyIndices.graphicsFamily;
-
-    if (vkCreateCommandPool(mDevice, &poolInfo, nullptr, &mCommandPool) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create command pool");
-    }
-}
-
-void HelloTriangle::createCommandBuffer()
-{
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool        = mCommandPool;
-    allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = 1;
-
-    if (vkAllocateCommandBuffers(mDevice, &allocInfo, &mCommandBuffer) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to allocate command buffer");
     }
 }
 

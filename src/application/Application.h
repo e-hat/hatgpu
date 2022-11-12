@@ -32,14 +32,15 @@ class Application
     void Run();
 
   protected:
+    static constexpr int kMaxFramesInFlight = 2;
+
     GLFWwindow *mWindow;
     InputManager mInputManager;
     Time mTime;
     Camera mCamera;
     std::string mWindowName;
     std::vector<VkImageView> mSwapchainImageViews;
-    VkCommandPool mCommandPool;
-    VkCommandBuffer mCommandBuffer;
+
     VkInstance mInstance;
     VkDebugUtilsMessengerEXT mDebugMessenger;
     VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
@@ -62,12 +63,16 @@ class Application
     static QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice &device,
                                                 const VkSurfaceKHR &surface);
 
+    VkCommandPool mCommandPool;
+    std::vector<VkCommandBuffer> mCommandBuffers;
     VkQueue mGraphicsQueue;
     VkQueue mPresentQueue;
-    VkSemaphore mImageAvailable;
-    VkSemaphore mRenderFinished;
-    VkFence mInFlight;
+    std::vector<VkSemaphore> mImageAvailableSemaphores;
+    std::vector<VkSemaphore> mRenderFinishedSemaphores;
+    std::vector<VkFence> mInFlightFences;
+
     uint32_t mCurrentImageIndex;
+    uint32_t mCurrentFrameIndex{0};
 
     VkShaderModule createShaderModule(const std::vector<char> &code);
 
@@ -84,6 +89,8 @@ class Application
     void createSwapchain();
     void createSwapchainImageViews();
     void createSyncObjects();
+    void createCommandPool();
+    void createCommandBuffers();
 };
 }  // namespace efvk
 #endif

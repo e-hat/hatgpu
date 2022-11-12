@@ -253,6 +253,8 @@ void Application::initVulkan()
     createSwapchain();
     createSwapchainImageViews();
     createSyncObjects();
+    createCommandPool();
+    createCommandBuffers();
 }
 
 void Application::Run()
@@ -263,12 +265,16 @@ void Application::Run()
     {
         mInputManager.ProcessInput(mWindow, mTime.GetDeltaTime());
 
-        vkWaitForFences(mDevice, 1, &mInFlight, VK_TRUE, std::numeric_limits<uint64_t>::max());
-        vkResetFences(mDevice, 1, &mInFlight);
+        vkWaitForFences(mDevice, 1, &mInFlightFences[mCurrentFrameIndex], VK_TRUE,
+                        std::numeric_limits<uint64_t>::max());
+        vkResetFences(mDevice, 1, &mInFlightFences[mCurrentFrameIndex]);
         vkAcquireNextImageKHR(mDevice, mSwapchain, std::numeric_limits<uint64_t>::max(),
-                              mImageAvailable, VK_NULL_HANDLE, &mCurrentImageIndex);
+                              mImageAvailableSemaphores[mCurrentFrameIndex], VK_NULL_HANDLE,
+                              &mCurrentImageIndex);
 
         OnRender();
+
+        mCurrentFrameIndex = (1 + mCurrentFrameIndex) % kMaxFramesInFlight;
 
         OnImGuiRender();
 
@@ -612,8 +618,43 @@ VkShaderModule Application::createShaderModule(const std::vector<char> &code)
     return shaderModule;
 }
 
+void Application::createCommandPool()
+{
+    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(mPhysicalDevice, mSurface);
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.queueFamilyIndex = *queueFamilyIndices.graphicsFamily;
+
+    if (vkCreateCommandPool(mDevice, &poolInfo, nullptr, &mCommandPool) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create command pool");
+    }
+}
+
+void Application::createCommandBuffers()
+{
+    mCommandBuffers.resize(kMaxFramesInFlight);
+
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool        = mCommandPool;
+    allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = static_cast<uint32_t>(mCommandBuffers.size());
+
+    if (vkAllocateCommandBuffers(mDevice, &allocInfo, mCommandBuffers.data()) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to allocate command buffer");
+    }
+}
+
 void Application::createSyncObjects()
 {
+    mImageAvailableSemaphores.resize(kMaxFramesInFlight);
+    mRenderFinishedSemaphores.resize(kMaxFramesInFlight);
+    mInFlightFences.resize(kMaxFramesInFlight);
+
     VkSemaphoreCreateInfo semaphoreCreateInfo{};
     semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -621,19 +662,29 @@ void Application::createSyncObjects()
     fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    if (vkCreateSemaphore(mDevice, &semaphoreCreateInfo, nullptr, &mImageAvailable) != VK_SUCCESS ||
-        vkCreateSemaphore(mDevice, &semaphoreCreateInfo, nullptr, &mRenderFinished) != VK_SUCCESS ||
-        vkCreateFence(mDevice, &fenceCreateInfo, nullptr, &mInFlight) != VK_SUCCESS)
+    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
-        throw std::runtime_error("Failed to create sync objects");
+        if (vkCreateSemaphore(mDevice, &semaphoreCreateInfo, nullptr,
+                              &mImageAvailableSemaphores[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(mDevice, &semaphoreCreateInfo, nullptr,
+                              &mRenderFinishedSemaphores[i]) != VK_SUCCESS ||
+            vkCreateFence(mDevice, &fenceCreateInfo, nullptr, &mInFlightFences[i]) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to create sync objects");
+        }
     }
 }
 
 Application::~Application()
 {
-    vkDestroySemaphore(mDevice, mImageAvailable, nullptr);
-    vkDestroySemaphore(mDevice, mRenderFinished, nullptr);
-    vkDestroyFence(mDevice, mInFlight, nullptr);
+    vkDestroyCommandPool(mDevice, mCommandPool, nullptr);
+
+    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+    {
+        vkDestroySemaphore(mDevice, mImageAvailableSemaphores[i], nullptr);
+        vkDestroySemaphore(mDevice, mRenderFinishedSemaphores[i], nullptr);
+        vkDestroyFence(mDevice, mInFlightFences[i], nullptr);
+    }
 
     for (const auto imageView : mSwapchainImageViews)
     {

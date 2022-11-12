@@ -3,6 +3,8 @@
 
 #include "application/Application.h"
 
+#include <vector>
+
 namespace efvk
 {
 
@@ -11,17 +13,15 @@ class HelloTriangle : public Application
   public:
     HelloTriangle();
 
-    virtual void Init() override;
-    virtual void Exit() override;
+    void Init() override;
+    void Exit() override;
 
-    virtual void OnRender() override;
-    virtual void OnImGuiRender() override;
+    void OnRender() override;
+    void OnImGuiRender() override;
 
   private:
     void createRenderPass();
     void createGraphicsPipeline();
-    void createCommandPool();
-    void createCommandBuffer();
     void recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex);
 
     VkRenderPass mRenderPass;
