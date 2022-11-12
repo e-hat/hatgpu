@@ -7,10 +7,11 @@ class GLFWwindow;
 
 namespace efvk
 {
+class Application;
 class InputManager
 {
   public:
-    InputManager() = default;
+    InputManager(Application *app) : mApp(app) {}
 
     void SetGLFWCallbacks(GLFWwindow *window, Camera *camera);
     void ProcessInput(GLFWwindow *window, float deltaTime);
@@ -25,6 +26,7 @@ class InputManager
     float mLastY     = 0;
 
     Camera *mCamera = nullptr;
+    Application *mApp;
 };
 }  // namespace efvk
 #endif

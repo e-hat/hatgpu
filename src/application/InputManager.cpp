@@ -1,5 +1,7 @@
 #include "application/InputManager.h"
 
+#include "application/Application.h"
+
 #include <GLFW/glfw3.h>
 
 namespace efvk
@@ -11,6 +13,11 @@ void InputManager::SetGLFWCallbacks(GLFWwindow *window, Camera *camera)
     glfwSetWindowUserPointer(window, static_cast<void *>(this));
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetScrollCallback(window, scroll_callback);
+    glfwSetFramebufferSizeCallback(
+        window, [](GLFWwindow *window, [[maybe_unused]] int width, [[maybe_unused]] int height) {
+            auto manager = static_cast<InputManager *>(glfwGetWindowUserPointer(window));
+            manager->mApp->SetFramebufferResized(true);
+        });
 }
 
 void InputManager::ProcessInput(GLFWwindow *window, float deltaTime)
@@ -22,7 +29,7 @@ void InputManager::ProcessInput(GLFWwindow *window, float deltaTime)
 // -------------------------------------------------------
 void InputManager::mouse_callback(GLFWwindow *window, double xpos, double ypos)
 {
-    InputManager *manager = static_cast<InputManager *>(glfwGetWindowUserPointer(window));
+    auto manager = static_cast<InputManager *>(glfwGetWindowUserPointer(window));
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
     {
         if (manager->mFirstMouse)
@@ -45,9 +52,11 @@ void InputManager::mouse_callback(GLFWwindow *window, double xpos, double ypos)
 
 // glfw: whenever the mouse scroll wheel scrolls, this callback is called
 // ----------------------------------------------------------------------
-void InputManager::scroll_callback(GLFWwindow *window, double /*xoffset*/, double yoffset)
+void InputManager::scroll_callback(GLFWwindow *window,
+                                   [[maybe_unused]] double xoffset,
+                                   [[maybe_unused]] double yoffset)
 {
-    InputManager *manager = static_cast<InputManager *>(glfwGetWindowUserPointer(window));
+    auto manager = static_cast<InputManager *>(glfwGetWindowUserPointer(window));
     manager->mCamera->ProcessMouseScroll(static_cast<float>(yoffset));
 }
 
@@ -55,7 +64,7 @@ void InputManager::scroll_callback(GLFWwindow *window, double /*xoffset*/, doubl
 void InputManager::processInput(GLFWwindow *window, float deltaTime)
 {
     glfwPollEvents();
-    InputManager *manager = static_cast<InputManager *>(glfwGetWindowUserPointer(window));
+    auto manager = static_cast<InputManager *>(glfwGetWindowUserPointer(window));
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 

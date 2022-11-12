@@ -26,19 +26,22 @@ class Application
     virtual void Init() = 0;
     virtual void Exit() = 0;
 
-    virtual void OnRender()      = 0;
-    virtual void OnImGuiRender() = 0;
+    virtual void OnRender()            = 0;
+    virtual void OnImGuiRender()       = 0;
+    virtual void OnRecreateSwapchain() = 0;
 
     void Run();
+
+    void SetFramebufferResized(bool value) { mFramebufferResized = value; }
 
   protected:
     static constexpr int kMaxFramesInFlight = 2;
 
     GLFWwindow *mWindow;
+    std::string mWindowName;
     InputManager mInputManager;
     Time mTime;
     Camera mCamera;
-    std::string mWindowName;
     std::vector<VkImageView> mSwapchainImageViews;
 
     VkInstance mInstance;
@@ -70,11 +73,13 @@ class Application
     std::vector<VkSemaphore> mImageAvailableSemaphores;
     std::vector<VkSemaphore> mRenderFinishedSemaphores;
     std::vector<VkFence> mInFlightFences;
+    bool mFramebufferResized{false};
 
     uint32_t mCurrentImageIndex;
     uint32_t mCurrentFrameIndex{0};
 
     VkShaderModule createShaderModule(const std::vector<char> &code);
+    void recreateSwapchain();
 
   private:
     void initWindow();
@@ -87,6 +92,7 @@ class Application
     static bool isDeviceSuitable(const VkPhysicalDevice &device, const VkSurfaceKHR &surface);
     void createLogicalDevice();
     void createSwapchain();
+    void cleanupSwapchain();
     void createSwapchainImageViews();
     void createSyncObjects();
     void createCommandPool();

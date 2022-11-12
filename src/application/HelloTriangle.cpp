@@ -38,11 +38,6 @@ void HelloTriangle::Init()
 
 void HelloTriangle::Exit()
 {
-    for (auto framebuffer : mSwapchainFramebuffers)
-    {
-        vkDestroyFramebuffer(mDevice, framebuffer, nullptr);
-    }
-
     vkDestroyPipeline(mDevice, mGraphicsPipeline, nullptr);
     vkDestroyPipelineLayout(mDevice, mPipelineLayout, nullptr);
     vkDestroyRenderPass(mDevice, mRenderPass, nullptr);
@@ -50,6 +45,22 @@ void HelloTriangle::Exit()
 
 void HelloTriangle::OnRender()
 {
+    vkWaitForFences(mDevice, 1, &mInFlightFences[mCurrentFrameIndex], VK_TRUE,
+                    std::numeric_limits<uint64_t>::max());
+    VkResult nextImageResult = vkAcquireNextImageKHR(
+        mDevice, mSwapchain, std::numeric_limits<uint64_t>::max(),
+        mImageAvailableSemaphores[mCurrentFrameIndex], VK_NULL_HANDLE, &mCurrentImageIndex);
+    if (nextImageResult == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        recreateSwapchain();
+        return;
+    }
+    else if (nextImageResult != VK_SUCCESS && nextImageResult != VK_SUBOPTIMAL_KHR)
+    {
+        throw std::runtime_error("Failed to acquire swapchain image");
+    }
+
+    vkResetFences(mDevice, 1, &mInFlightFences[mCurrentFrameIndex]);
     vkResetCommandBuffer(mCommandBuffers[mCurrentFrameIndex], 0);
     recordCommandBuffer(mCommandBuffers[mCurrentFrameIndex], mCurrentImageIndex);
 
@@ -86,9 +97,25 @@ void HelloTriangle::OnRender()
     presentInfo.swapchainCount               = 1;
     presentInfo.pSwapchains                  = swapchains.data();
     presentInfo.pImageIndices                = &mCurrentImageIndex;
-    vkQueuePresentKHR(mPresentQueue, &presentInfo);
+    VkResult presentResult                   = vkQueuePresentKHR(mPresentQueue, &presentInfo);
+
+    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR ||
+        mFramebufferResized)
+    {
+        SetFramebufferResized(false);
+        recreateSwapchain();
+    }
+    else if (presentResult != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to present swapchain image");
+    }
 }
 void HelloTriangle::OnImGuiRender() {}
+
+void HelloTriangle::OnRecreateSwapchain()
+{
+    createFramebuffers(mRenderPass);
+}
 
 void HelloTriangle::createGraphicsPipeline()
 {

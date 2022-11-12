@@ -18,6 +18,7 @@ class HelloTriangle : public Application
 
     void OnRender() override;
     void OnImGuiRender() override;
+    void OnRecreateSwapchain() override;
 
   private:
     void createRenderPass();

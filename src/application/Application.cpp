@@ -221,7 +221,7 @@ VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities, GLFWwi
 }  // namespace
 
 Application::Application(const std::string &windowName)
-    : mWindow(nullptr), mWindowName(std::move(windowName))
+    : mWindow(nullptr), mWindowName(std::move(windowName)), mInputManager(this)
 {
     initWindow();
     initVulkan();
@@ -264,13 +264,6 @@ void Application::Run()
     while (!glfwWindowShouldClose(mWindow))
     {
         mInputManager.ProcessInput(mWindow, mTime.GetDeltaTime());
-
-        vkWaitForFences(mDevice, 1, &mInFlightFences[mCurrentFrameIndex], VK_TRUE,
-                        std::numeric_limits<uint64_t>::max());
-        vkResetFences(mDevice, 1, &mInFlightFences[mCurrentFrameIndex]);
-        vkAcquireNextImageKHR(mDevice, mSwapchain, std::numeric_limits<uint64_t>::max(),
-                              mImageAvailableSemaphores[mCurrentFrameIndex], VK_NULL_HANDLE,
-                              &mCurrentImageIndex);
 
         OnRender();
 
@@ -675,6 +668,39 @@ void Application::createSyncObjects()
     }
 }
 
+void Application::cleanupSwapchain()
+{
+    for (size_t i = 0; i < mSwapchainFramebuffers.size(); ++i)
+    {
+        vkDestroyFramebuffer(mDevice, mSwapchainFramebuffers[i], nullptr);
+    }
+
+    for (size_t i = 0; i < mSwapchainImageViews.size(); ++i)
+    {
+        vkDestroyImageView(mDevice, mSwapchainImageViews[i], nullptr);
+    }
+
+    vkDestroySwapchainKHR(mDevice, mSwapchain, nullptr);
+}
+
+void Application::recreateSwapchain()
+{
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(mWindow, &width, &height);
+    while (width == 0 || height == 0)
+    {
+        glfwGetFramebufferSize(mWindow, &width, &height);
+        glfwWaitEvents();
+    }
+    vkDeviceWaitIdle(mDevice);
+
+    cleanupSwapchain();
+
+    createSwapchain();
+    createSwapchainImageViews();
+    OnRecreateSwapchain();
+}
+
 Application::~Application()
 {
     vkDestroyCommandPool(mDevice, mCommandPool, nullptr);
@@ -686,12 +712,8 @@ Application::~Application()
         vkDestroyFence(mDevice, mInFlightFences[i], nullptr);
     }
 
-    for (const auto imageView : mSwapchainImageViews)
-    {
-        vkDestroyImageView(mDevice, imageView, nullptr);
-    }
+    cleanupSwapchain();
 
-    vkDestroySwapchainKHR(mDevice, mSwapchain, nullptr);
     vkDestroyDevice(mDevice, nullptr);
     if constexpr (kEnableValidationLayers)
     {
