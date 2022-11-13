@@ -53,7 +53,6 @@ class Application
     VkExtent2D mSwapchainExtent;
     std::vector<VkImage> mSwapchainImages;
     std::vector<VkFramebuffer> mSwapchainFramebuffers;
-    void createFramebuffers(const VkRenderPass &renderPass);
 
     struct QueueFamilyIndices
     {

@@ -2,9 +2,12 @@
 
 #include "EfvkRenderer.h"
 
+#include <glm/gtx/string_cast.hpp>
+
 #include <array>
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 
 namespace efvk
@@ -29,46 +32,10 @@ std::vector<char> readFile(const std::string &filename)
     return buffer;
 }
 
-struct SimpleVertex
+struct MeshPushConstants
 {
-    glm::vec2 pos;
-    glm::vec3 color;
-
-    static VkVertexInputBindingDescription getBindingDescription()
-    {
-        VkVertexInputBindingDescription bindingDescription{};
-        bindingDescription.binding   = 0;
-        bindingDescription.stride    = sizeof(SimpleVertex);
-        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-        return bindingDescription;
-    }
-
-    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions()
-    {
-        std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions;
-
-        attributeDescriptions[0].binding  = 0;
-        attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].format   = VK_FORMAT_R32G32_SFLOAT;
-        attributeDescriptions[0].offset   = offsetof(SimpleVertex, pos);
-
-        attributeDescriptions[1].binding  = 0;
-        attributeDescriptions[1].location = 1;
-        attributeDescriptions[1].format   = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[1].offset   = offsetof(SimpleVertex, color);
-
-        return attributeDescriptions;
-    }
-};
-constexpr std::array<SimpleVertex, 3> kVertices = {SimpleVertex{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-                                                   SimpleVertex{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-                                                   SimpleVertex{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
-
-struct AllocatedBuffer
-{
-    VkBuffer buffer;
-    VmaAllocation allocation;
+    glm::vec4 data;
+    glm::mat4x4 renderMatrix;
 };
 }  // namespace
 
@@ -76,10 +43,6 @@ EfvkRenderer::EfvkRenderer() : Application("Efvk Rendering Engine") {}
 
 void EfvkRenderer::Init()
 {
-    createRenderPass();
-    createGraphicsPipeline();
-    createFramebuffers(mRenderPass);
-
     VmaAllocatorCreateInfo allocatorInfo = {};
     allocatorInfo.physicalDevice         = mPhysicalDevice;
     allocatorInfo.device                 = mDevice;
@@ -91,6 +54,11 @@ void EfvkRenderer::Init()
     }
 
     mDeleters.emplace_back([this]() { vmaDestroyAllocator(mAllocator); });
+
+    createDepthImage();
+    createRenderPass();
+    createGraphicsPipeline();
+    createFramebuffers(mRenderPass);
 
     loadMeshes();
 }
@@ -163,6 +131,8 @@ void EfvkRenderer::OnRender()
     {
         throw std::runtime_error("Failed to present swapchain image");
     }
+
+    ++mFrameCount;
 }
 void EfvkRenderer::OnImGuiRender() {}
 
@@ -171,10 +141,89 @@ void EfvkRenderer::OnRecreateSwapchain()
     createFramebuffers(mRenderPass);
 }
 
+void EfvkRenderer::createFramebuffers(const VkRenderPass &renderPass)
+{
+    mSwapchainFramebuffers.resize(mSwapchainImageViews.size());
+
+    for (size_t i = 0; i < mSwapchainImageViews.size(); ++i)
+    {
+        std::array<VkImageView, 2> attachments = {mSwapchainImageViews[i], mDepthImageView};
+
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass      = renderPass;
+        framebufferInfo.attachmentCount = attachments.size();
+        framebufferInfo.pAttachments    = attachments.data();
+        framebufferInfo.width           = mSwapchainExtent.width;
+        framebufferInfo.height          = mSwapchainExtent.height;
+        framebufferInfo.layers          = 1;
+
+        if (vkCreateFramebuffer(mDevice, &framebufferInfo, nullptr, &mSwapchainFramebuffers[i]) !=
+            VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to create framebuffer");
+        }
+    }
+}
+
+void EfvkRenderer::createDepthImage()
+{
+    VkExtent3D depthImageExtent = {mSwapchainExtent.width, mSwapchainExtent.height, 1};
+
+    mDepthFormat = VK_FORMAT_D32_SFLOAT;
+
+    VkImageCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    info.pNext = nullptr;
+
+    info.imageType = VK_IMAGE_TYPE_2D;
+
+    info.format = mDepthFormat;
+    info.extent = depthImageExtent;
+
+    info.mipLevels   = 1;
+    info.arrayLayers = 1;
+    info.samples     = VK_SAMPLE_COUNT_1_BIT;
+    info.tiling      = VK_IMAGE_TILING_OPTIMAL;
+    info.usage       = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+    VmaAllocationCreateInfo allocationInfo{};
+    allocationInfo.usage         = VMA_MEMORY_USAGE_GPU_ONLY;
+    allocationInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (vmaCreateImage(mAllocator, &info, &allocationInfo, &mDepthImage.image,
+                       &mDepthImage.allocation, nullptr) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to allocate depth image");
+    }
+
+    VkImageViewCreateInfo viewInfo = {};
+    viewInfo.sType                 = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.pNext                 = nullptr;
+
+    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.image                           = mDepthImage.image;
+    viewInfo.format                          = mDepthFormat;
+    viewInfo.subresourceRange.baseMipLevel   = 0;
+    viewInfo.subresourceRange.levelCount     = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount     = 1;
+    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+    if (vkCreateImageView(mDevice, &viewInfo, nullptr, &mDepthImageView) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create depth image view");
+    }
+
+    mDeleters.emplace_back([this]() {
+        vkDestroyImageView(mDevice, mDepthImageView, nullptr);
+        vmaDestroyImage(mAllocator, mDepthImage.image, mDepthImage.allocation);
+    });
+}
+
 void EfvkRenderer::createGraphicsPipeline()
 {
-    const auto vertShaderCode = readFile("shaders/bin/shader.vert.spv");
-    const auto fragShaderCode = readFile("shaders/bin/shader.frag.spv");
+    const auto vertShaderCode = readFile("../shaders/bin/shader.vert.spv");
+    const auto fragShaderCode = readFile("../shaders/bin/shader.frag.spv");
 
     VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
     VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
@@ -245,7 +294,14 @@ void EfvkRenderer::createGraphicsPipeline()
     multisampling.sampleShadingEnable  = VK_FALSE;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-    VkPipelineDepthStencilStateCreateInfo *depthStencilStateCreateInfo = nullptr;
+    VkPipelineDepthStencilStateCreateInfo depthStencilStateCreateInfo{};
+    depthStencilStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencilStateCreateInfo.pNext = nullptr;
+    depthStencilStateCreateInfo.depthTestEnable       = VK_TRUE;
+    depthStencilStateCreateInfo.depthWriteEnable      = VK_TRUE;
+    depthStencilStateCreateInfo.depthCompareOp        = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depthStencilStateCreateInfo.depthBoundsTestEnable = VK_FALSE;
+    depthStencilStateCreateInfo.stencilTestEnable     = VK_FALSE;
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
@@ -265,8 +321,15 @@ void EfvkRenderer::createGraphicsPipeline()
     colorBlending.attachmentCount = 1;
     colorBlending.pAttachments    = &colorBlendAttachment;
 
+    VkPushConstantRange pushConstant;
+    pushConstant.offset     = 0;
+    pushConstant.size       = sizeof(MeshPushConstants);
+    pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
-    pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutCreateInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+    pipelineLayoutCreateInfo.pPushConstantRanges    = &pushConstant;
 
     if (vkCreatePipelineLayout(mDevice, &pipelineLayoutCreateInfo, nullptr, &mPipelineLayout) !=
         VK_SUCCESS)
@@ -294,7 +357,7 @@ void EfvkRenderer::createGraphicsPipeline()
     pipelineInfo.pViewportState      = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState   = &multisampling;
-    pipelineInfo.pDepthStencilState  = depthStencilStateCreateInfo;
+    pipelineInfo.pDepthStencilState  = &depthStencilStateCreateInfo;
     pipelineInfo.pColorBlendState    = &colorBlending;
     pipelineInfo.pDynamicState       = &dynamicState;
 
@@ -316,6 +379,7 @@ void EfvkRenderer::createGraphicsPipeline()
 
 void EfvkRenderer::createRenderPass()
 {
+    // Initialize color attachment
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format         = mSwapchainImageFormat;
     colorAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
@@ -330,29 +394,57 @@ void EfvkRenderer::createRenderPass()
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    // Initialize depth attachment
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format         = mDepthFormat;
+    depthAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depthAttachmentRef{};
+    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments    = &colorAttachmentRef;
+    subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount    = 1;
+    subpass.pColorAttachments       = &colorAttachmentRef;
+    subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
     VkSubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-
+    dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass    = 0;
     dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependency.srcAccessMask = 0;
-
     dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
+    VkSubpassDependency depthDependency{};
+    depthDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    depthDependency.dstSubpass = 0;
+    depthDependency.srcStageMask =
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    depthDependency.srcAccessMask = 0;
+    depthDependency.dstStageMask =
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    depthDependency.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+    std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
+    std::array<VkSubpassDependency, 2> dependencies    = {dependency, depthDependency};
+
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments    = &colorAttachment;
+    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    renderPassInfo.pAttachments    = attachments.data();
     renderPassInfo.subpassCount    = 1;
     renderPassInfo.pSubpasses      = &subpass;
     renderPassInfo.subpassCount    = 1;
-    renderPassInfo.pDependencies   = &dependency;
+    renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
+    renderPassInfo.pDependencies   = dependencies.data();
 
     if (vkCreateRenderPass(mDevice, &renderPassInfo, nullptr, &mRenderPass) != VK_SUCCESS)
     {
@@ -376,6 +468,9 @@ void EfvkRenderer::loadMeshes()
     mTriangleMesh.vertices[2].color = {0.f, 1.f, 0.0f};
 
     uploadMesh(mTriangleMesh);
+
+    mMonkeyMesh.loadFromObj("../assets/monkey_smooth.obj");
+    uploadMesh(mMonkeyMesh);
 }
 
 void EfvkRenderer::uploadMesh(Mesh &mesh)
@@ -420,9 +515,12 @@ void EfvkRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer, uin
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = mSwapchainExtent;
 
-    renderPassInfo.clearValueCount = 1;
-    VkClearValue clearColor        = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-    renderPassInfo.pClearValues    = &clearColor;
+    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    VkClearValue depthClear{};
+    depthClear.depthStencil.depth           = 1.f;
+    std::array<VkClearValue, 2> clearValues = {clearColor, depthClear};
+    renderPassInfo.clearValueCount          = static_cast<uint32_t>(clearValues.size());
+    renderPassInfo.pClearValues             = clearValues.data();
 
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -443,9 +541,23 @@ void EfvkRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer, uin
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mTriangleMesh.vertexBuffer.buffer, &offset);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mMonkeyMesh.vertexBuffer.buffer, &offset);
 
-    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    auto view       = mCamera.GetViewMatrix();
+    auto projection = mCamera.GetProjectionMatrix();
+    glm::mat4 model =
+        glm::rotate(glm::mat4{1.0f}, glm::radians(mFrameCount * 0.004f), glm::vec3(0, 1, 0));
+    model = glm::rotate(model, 135.0f, glm::vec3(1.f, 0.f, 0.f));
+
+    glm::mat4 meshMatrix = projection * view * model;
+
+    MeshPushConstants constants;
+    constants.renderMatrix = meshMatrix;
+
+    vkCmdPushConstants(commandBuffer, mPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                       sizeof(MeshPushConstants), &constants);
+
+    vkCmdDraw(commandBuffer, mMonkeyMesh.vertices.size(), 1, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
 

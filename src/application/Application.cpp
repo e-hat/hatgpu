@@ -223,8 +223,9 @@ VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities, GLFWwi
 }  // namespace
 
 Application::Application(const std::string &windowName)
-    : mWindow(nullptr), mWindowName(std::move(windowName)), mInputManager(this)
+    : mWindow(nullptr), mWindowName(std::move(windowName)), mInputManager(this), mCamera()
 {
+    mCamera.Position = {0.f, 0.f, 3.f};
     initWindow();
     initVulkan();
 }
@@ -583,31 +584,6 @@ void Application::createSwapchainImageViews()
             VK_SUCCESS)
         {
             throw std::runtime_error("Failed to create swapchain image view");
-        }
-    }
-}
-
-void Application::createFramebuffers(const VkRenderPass &renderPass)
-{
-    mSwapchainFramebuffers.resize(mSwapchainImageViews.size());
-
-    for (size_t i = 0; i < mSwapchainImageViews.size(); ++i)
-    {
-        std::array<VkImageView, 1> attachments = {mSwapchainImageViews[i]};
-
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass      = renderPass;
-        framebufferInfo.attachmentCount = attachments.size();
-        framebufferInfo.pAttachments    = attachments.data();
-        framebufferInfo.width           = mSwapchainExtent.width;
-        framebufferInfo.height          = mSwapchainExtent.height;
-        framebufferInfo.layers          = 1;
-
-        if (vkCreateFramebuffer(mDevice, &framebufferInfo, nullptr, &mSwapchainFramebuffers[i]) !=
-            VK_SUCCESS)
-        {
-            throw std::runtime_error("Failed to create framebuffer");
         }
     }
 }

@@ -5,6 +5,7 @@
 #include "efvk_types.h"
 
 #include <array>
+#include <string>
 #include <vector>
 
 namespace efvk
@@ -53,6 +54,8 @@ struct Mesh
     std::vector<Vertex> vertices;
 
     AllocatedBuffer vertexBuffer;
+
+    bool loadFromObj(const std::string &filename);
 };
 }  // namespace efvk
 

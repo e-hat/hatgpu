@@ -4,6 +4,7 @@
 
 #include "application/Application.h"
 #include "geometry/Mesh.h"
+#include "scene/Camera.h"
 
 #include <vector>
 
@@ -25,7 +26,8 @@ class EfvkRenderer : public Application
   private:
     void createRenderPass();
     void createGraphicsPipeline();
-    void createVertexBuffer();
+    void createDepthImage();
+    void createFramebuffers(const VkRenderPass &renderPass);
     void recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex);
 
     void loadMeshes();
@@ -35,7 +37,15 @@ class EfvkRenderer : public Application
     VkPipelineLayout mPipelineLayout;
     VkPipeline mGraphicsPipeline;
     VmaAllocator mAllocator;
+
+    VkImageView mDepthImageView;
+    AllocatedImage mDepthImage{};
+    VkFormat mDepthFormat;
+
     Mesh mTriangleMesh;
+    Mesh mMonkeyMesh;
+
+    uint32_t mFrameCount{0};
 };
 
 }  // namespace efvk
