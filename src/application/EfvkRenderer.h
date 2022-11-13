@@ -3,7 +3,7 @@
 #include "efpch.h"
 
 #include "application/Application.h"
-#include "geometry/Mesh.h"
+#include "geometry/Model.h"
 #include "scene/Camera.h"
 
 #include <memory>
@@ -37,13 +37,11 @@ class EfvkRenderer : public Application
     void drawObjects(const VkCommandBuffer &commandBuffer);
     void recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex);
 
-    void loadMeshes();
     void uploadMesh(Mesh &mesh);
 
-    using MeshHandle = std::weak_ptr<Mesh>;
     struct RenderObject
     {
-        MeshHandle mesh;
+        std::shared_ptr<Model> model;
         glm::mat4 transform;
     };
 
@@ -56,12 +54,7 @@ class EfvkRenderer : public Application
     AllocatedImage mDepthImage{};
     VkFormat mDepthFormat;
 
-    std::shared_ptr<Mesh> mMonkeyMesh;
-
     std::vector<RenderObject> mRenderables;
-    std::unordered_map<std::string, std::shared_ptr<Mesh>> mMeshes;
-
-    std::optional<MeshHandle> getMesh(const std::string &name);
 
     uint32_t mFrameCount{0};
 };

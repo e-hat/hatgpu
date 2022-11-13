@@ -60,8 +60,6 @@ void EfvkRenderer::Init()
     createGraphicsPipeline();
     createFramebuffers(mRenderPass);
 
-    loadMeshes();
-
     createScene();
 }
 
@@ -456,30 +454,14 @@ void EfvkRenderer::createRenderPass()
     mDeleters.emplace_back([this]() { vkDestroyRenderPass(mDevice, mRenderPass, nullptr); });
 }
 
-std::optional<EfvkRenderer::MeshHandle> EfvkRenderer::getMesh(const std::string &name)
-{
-    if (mMeshes.find(name) == mMeshes.end())
-    {
-        return std::nullopt;
-    }
-
-    return mMeshes[name];
-}
-
-void EfvkRenderer::loadMeshes()
-{
-    mMonkeyMesh = std::make_shared<Mesh>();
-    mMonkeyMesh->loadFromObj("../assets/monkey_smooth.obj");
-    uploadMesh(*mMonkeyMesh);
-
-    mMeshes["monkey"] = mMonkeyMesh;
-}
-
 void EfvkRenderer::uploadMesh(Mesh &mesh)
 {
+    std::cout << "uploading mesh\n";
+    // Create vertex buffers
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size  = mesh.vertices.size() * sizeof(Vertex);
+    std::cout << "buffer size " << bufferInfo.size << '\n';
     bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 
     VmaAllocationCreateInfo vmaAllocInfo{};
@@ -499,22 +481,66 @@ void EfvkRenderer::uploadMesh(Mesh &mesh)
     vmaMapMemory(mAllocator, mesh.vertexBuffer.allocation, &data);
     std::memcpy(data, mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
     vmaUnmapMemory(mAllocator, mesh.vertexBuffer.allocation);
+
+    VkBufferCreateInfo iboInfo{};
+    iboInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    iboInfo.size  = mesh.indices.size() * sizeof(mesh.indices[0]);
+    iboInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+
+    VmaAllocationCreateInfo iboAllocInfo{};
+    iboAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+
+    if (vmaCreateBuffer(mAllocator, &iboInfo, &iboAllocInfo, &mesh.indexBuffer.buffer,
+                        &mesh.indexBuffer.allocation, nullptr) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to allocate index buffer while uploading a mesh");
+    }
+
+    mDeleters.emplace_back([this, mesh] {
+        vmaDestroyBuffer(mAllocator, mesh.indexBuffer.buffer, mesh.indexBuffer.allocation);
+    });
+
+    vmaMapMemory(mAllocator, mesh.indexBuffer.allocation, &data);
+    std::memcpy(data, mesh.indices.data(), mesh.indices.size() * sizeof(mesh.indices[0]));
+    vmaUnmapMemory(mAllocator, mesh.indexBuffer.allocation);
 }
 
 void EfvkRenderer::createScene()
 {
     RenderObject monkey1;
-    monkey1.mesh      = *getMesh("monkey");
-    monkey1.transform = glm::rotate(glm::mat4(1.f), 135.f, glm::vec3(1.f, 0.f, 0.f));
+    monkey1.model = std::make_shared<Model>();
+    monkey1.model->loadFromObj("../assets/monkey/monkey_smooth.obj");
+    for (auto &mesh : monkey1.model->meshes)
+    {
+        std::cout << "number of verts in mesh: " << mesh.vertices.size() << '\n';
+    }
+    for (auto &mesh : monkey1.model->meshes)
+    {
+        uploadMesh(mesh);
+    }
+
+    monkey1.transform = glm::translate(glm::mat4(1.f), glm::vec3(0.f, 0.f, -5.f));
+    monkey1.transform = glm::rotate(monkey1.transform, 135.f, glm::vec3(1.f, 0.f, 0.f));
     mRenderables.push_back(monkey1);
 
-    RenderObject monkey2;
-    monkey2.mesh      = *getMesh("monkey");
-    auto translation  = glm::translate(glm::mat4(1.), glm::vec3(0.f, 0.f, 5.f));
-    auto scale        = glm::scale(glm::mat4(1.), glm::vec3(3.));
-    auto rotate       = glm::rotate(glm::mat4(1.), 135.f, glm::vec3(1.f, 0.f, 0.f));
-    monkey2.transform = translation * rotate * scale;
-    mRenderables.push_back(monkey2);
+    RenderObject sponza;
+    sponza.model = std::make_shared<Model>();
+    sponza.model->loadFromObj("../assets/sponza/sponza.obj");
+    for (auto &mesh : sponza.model->meshes)
+    {
+        std::cout << "number of verts in mesh: " << mesh.vertices.size() << '\n';
+    }
+
+    for (auto &mesh : sponza.model->meshes)
+    {
+        uploadMesh(mesh);
+    }
+
+    auto scale       = glm::scale(glm::mat4(1.f), glm::vec3(0.01f));
+    auto rotate      = glm::rotate(glm::mat4(1.f), 180.f, glm::vec3(1.f, 0.f, 0.f));
+    auto translate   = glm::translate(glm::mat4(1.f), glm::vec3(0.f, 5.f, 0.f));
+    sponza.transform = translate * rotate * scale;
+    mRenderables.push_back(sponza);
 }
 
 void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
@@ -523,7 +549,6 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
     const glm::mat4 proj = mCamera.GetProjectionMatrix();
     const glm::mat4 vp   = proj * view;
 
-    Mesh *lastMesh = nullptr;
     for (const auto &object : mRenderables)
     {
         glm::mat4 mvp = vp * object.transform;
@@ -534,15 +559,15 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
         vkCmdPushConstants(commandBuffer, mPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(MeshPushConstants), &constants);
 
-        std::shared_ptr<Mesh> meshPtr = object.mesh.lock();
-        if (meshPtr.get() != lastMesh)
+        for (const auto &mesh : object.model->meshes)
         {
             VkDeviceSize offset = 0;
-            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &meshPtr->vertexBuffer.buffer, &offset);
-            lastMesh = meshPtr.get();
-        }
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer.buffer, &offset);
 
-        vkCmdDraw(commandBuffer, meshPtr->vertices.size(), 1, 0, 0);
+            vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
+        }
     }
 }
 

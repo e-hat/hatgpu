@@ -11,7 +11,11 @@ enum class CameraMovement
     FORWARD,
     BACKWARD,
     LEFT,
-    RIGHT
+    RIGHT,
+    LOOKUP,
+    LOOKDOWN,
+    LOOKLEFT,
+    LOOKRIGHT
 };
 
 const float YAW         = -90.0f;
@@ -111,7 +115,21 @@ class Camera
             case CameraMovement::RIGHT:
                 Position += Right * velocity;
                 break;
+            case CameraMovement::LOOKUP:
+                Pitch -= 0.05;
+                break;
+            case CameraMovement::LOOKDOWN:
+                Pitch += 0.05;
+                break;
+            case CameraMovement::LOOKLEFT:
+                Yaw -= 0.05;
+                break;
+            case CameraMovement::LOOKRIGHT:
+                Yaw += 0.05;
+                break;
         }
+
+        updateCameraVectors();
     }
 
     void ProcessMouseMovement(float xOffset, float yOffset, bool constrainPitch = true)

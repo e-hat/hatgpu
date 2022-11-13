@@ -23,7 +23,7 @@ set(SOURCES ${SOURCES} ${SOURCE_DIR}/main.cpp
         ${SOURCE_DIR}/geometry/Mesh.cpp
         ${SOURCE_DIR}/geometry/Mesh.h
         ${SOURCE_DIR}/efvk_types.h
-        ${SOURCE_DIR}/initialize_vma.cpp)
+        ${SOURCE_DIR}/initialize_vma.cpp src/geometry/Model.cpp src/geometry/Model.h)
 add_executable(efvk ${SOURCES})
 
 set(INCLUDES ${SOURCE_DIR})

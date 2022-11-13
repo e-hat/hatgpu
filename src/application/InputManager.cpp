@@ -78,5 +78,13 @@ void InputManager::processInput(GLFWwindow *window, float deltaTime)
         manager->mCamera->ProcessKeyboard(CameraMovement::LEFT, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         manager->mCamera->ProcessKeyboard(CameraMovement::RIGHT, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
+        manager->mCamera->ProcessKeyboard(CameraMovement::LOOKLEFT, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+        manager->mCamera->ProcessKeyboard(CameraMovement::LOOKRIGHT, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
+        manager->mCamera->ProcessKeyboard(CameraMovement::LOOKUP, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
+        manager->mCamera->ProcessKeyboard(CameraMovement::LOOKDOWN, deltaTime);
 }
 }  // namespace efvk
