@@ -61,6 +61,8 @@ void EfvkRenderer::Init()
     createFramebuffers(mRenderPass);
 
     loadMeshes();
+
+    createScene();
 }
 
 void EfvkRenderer::Exit() {}
@@ -454,23 +456,23 @@ void EfvkRenderer::createRenderPass()
     mDeleters.emplace_back([this]() { vkDestroyRenderPass(mDevice, mRenderPass, nullptr); });
 }
 
+std::optional<EfvkRenderer::MeshHandle> EfvkRenderer::getMesh(const std::string &name)
+{
+    if (mMeshes.find(name) == mMeshes.end())
+    {
+        return std::nullopt;
+    }
+
+    return mMeshes[name];
+}
+
 void EfvkRenderer::loadMeshes()
 {
-    mTriangleMesh.vertices.resize(3);
-    mTriangleMesh.vertices.resize(3);
+    mMonkeyMesh = std::make_shared<Mesh>();
+    mMonkeyMesh->loadFromObj("../assets/monkey_smooth.obj");
+    uploadMesh(*mMonkeyMesh);
 
-    mTriangleMesh.vertices[0].position = {1.f, 1.f, 0.0f};
-    mTriangleMesh.vertices[1].position = {-1.f, 1.f, 0.0f};
-    mTriangleMesh.vertices[2].position = {0.f, -1.f, 0.0f};
-
-    mTriangleMesh.vertices[0].color = {0.f, 1.f, 0.0f};
-    mTriangleMesh.vertices[1].color = {0.f, 1.f, 0.0f};
-    mTriangleMesh.vertices[2].color = {0.f, 1.f, 0.0f};
-
-    uploadMesh(mTriangleMesh);
-
-    mMonkeyMesh.loadFromObj("../assets/monkey_smooth.obj");
-    uploadMesh(mMonkeyMesh);
+    mMeshes["monkey"] = mMonkeyMesh;
 }
 
 void EfvkRenderer::uploadMesh(Mesh &mesh)
@@ -497,6 +499,51 @@ void EfvkRenderer::uploadMesh(Mesh &mesh)
     vmaMapMemory(mAllocator, mesh.vertexBuffer.allocation, &data);
     std::memcpy(data, mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
     vmaUnmapMemory(mAllocator, mesh.vertexBuffer.allocation);
+}
+
+void EfvkRenderer::createScene()
+{
+    RenderObject monkey1;
+    monkey1.mesh      = *getMesh("monkey");
+    monkey1.transform = glm::rotate(glm::mat4(1.f), 135.f, glm::vec3(1.f, 0.f, 0.f));
+    mRenderables.push_back(monkey1);
+
+    RenderObject monkey2;
+    monkey2.mesh      = *getMesh("monkey");
+    auto translation  = glm::translate(glm::mat4(1.), glm::vec3(0.f, 0.f, 5.f));
+    auto scale        = glm::scale(glm::mat4(1.), glm::vec3(3.));
+    auto rotate       = glm::rotate(glm::mat4(1.), 135.f, glm::vec3(1.f, 0.f, 0.f));
+    monkey2.transform = translation * rotate * scale;
+    mRenderables.push_back(monkey2);
+}
+
+void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
+{
+    const glm::mat4 view = mCamera.GetViewMatrix();
+    const glm::mat4 proj = mCamera.GetProjectionMatrix();
+    const glm::mat4 vp   = proj * view;
+
+    Mesh *lastMesh = nullptr;
+    for (const auto &object : mRenderables)
+    {
+        glm::mat4 mvp = vp * object.transform;
+
+        MeshPushConstants constants;
+        constants.renderMatrix = mvp;
+
+        vkCmdPushConstants(commandBuffer, mPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(MeshPushConstants), &constants);
+
+        std::shared_ptr<Mesh> meshPtr = object.mesh.lock();
+        if (meshPtr.get() != lastMesh)
+        {
+            VkDeviceSize offset = 0;
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &meshPtr->vertexBuffer.buffer, &offset);
+            lastMesh = meshPtr.get();
+        }
+
+        vkCmdDraw(commandBuffer, meshPtr->vertices.size(), 1, 0, 0);
+    }
 }
 
 void EfvkRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex)
@@ -540,24 +587,7 @@ void EfvkRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer, uin
     scissor.extent = mSwapchainExtent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mMonkeyMesh.vertexBuffer.buffer, &offset);
-
-    auto view       = mCamera.GetViewMatrix();
-    auto projection = mCamera.GetProjectionMatrix();
-    glm::mat4 model =
-        glm::rotate(glm::mat4{1.0f}, glm::radians(mFrameCount * 0.004f), glm::vec3(0, 1, 0));
-    model = glm::rotate(model, 135.0f, glm::vec3(1.f, 0.f, 0.f));
-
-    glm::mat4 meshMatrix = projection * view * model;
-
-    MeshPushConstants constants;
-    constants.renderMatrix = meshMatrix;
-
-    vkCmdPushConstants(commandBuffer, mPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                       sizeof(MeshPushConstants), &constants);
-
-    vkCmdDraw(commandBuffer, mMonkeyMesh.vertices.size(), 1, 0, 0);
+    drawObjects(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
 

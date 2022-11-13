@@ -6,6 +6,10 @@
 #include "geometry/Mesh.h"
 #include "scene/Camera.h"
 
+#include <memory>
+#include <optional>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace efvk
@@ -28,10 +32,20 @@ class EfvkRenderer : public Application
     void createGraphicsPipeline();
     void createDepthImage();
     void createFramebuffers(const VkRenderPass &renderPass);
+    void createScene();
+
+    void drawObjects(const VkCommandBuffer &commandBuffer);
     void recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex);
 
     void loadMeshes();
     void uploadMesh(Mesh &mesh);
+
+    using MeshHandle = std::weak_ptr<Mesh>;
+    struct RenderObject
+    {
+        MeshHandle mesh;
+        glm::mat4 transform;
+    };
 
     VkRenderPass mRenderPass;
     VkPipelineLayout mPipelineLayout;
@@ -42,8 +56,12 @@ class EfvkRenderer : public Application
     AllocatedImage mDepthImage{};
     VkFormat mDepthFormat;
 
-    Mesh mTriangleMesh;
-    Mesh mMonkeyMesh;
+    std::shared_ptr<Mesh> mMonkeyMesh;
+
+    std::vector<RenderObject> mRenderables;
+    std::unordered_map<std::string, std::shared_ptr<Mesh>> mMeshes;
+
+    std::optional<MeshHandle> getMesh(const std::string &name);
 
     uint32_t mFrameCount{0};
 };
