@@ -1,8 +1,6 @@
 #ifndef _INCLUDE_CAMERA_H
 #define _INCLUDE_CAMERA_H
-
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
+#include "efpch.h"
 
 #include <vector>
 

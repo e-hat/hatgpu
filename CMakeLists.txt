@@ -13,13 +13,17 @@ file(GLOB TOPLEVEL_SOURCES ${SOURCE_DIR}/*.cpp)
 set(SOURCES ${SOURCES} ${SOURCE_DIR}/main.cpp
         ${SOURCE_DIR}/application/Application.h
         ${SOURCE_DIR}/application/Application.cpp
-        ${SOURCE_DIR}/application/HelloTriangle.h
-        ${SOURCE_DIR}/application/HelloTriangle.cpp
+        ${SOURCE_DIR}/application/EfvkRenderer.h
+        ${SOURCE_DIR}/application/EfvkRenderer.cpp
         ${SOURCE_DIR}/application/InputManager.h
         ${SOURCE_DIR}/application/InputManager.cpp
         ${SOURCE_DIR}/util/Time.h
         ${SOURCE_DIR}/util/Time.cpp
-        ${SOURCE_DIR}/scene/Camera.h)
+        ${SOURCE_DIR}/scene/Camera.h
+        ${SOURCE_DIR}/geometry/Mesh.cpp
+        ${SOURCE_DIR}/geometry/Mesh.h
+        ${SOURCE_DIR}/efvk_types.h
+        ${SOURCE_DIR}/initialize_vma.cpp)
 add_executable(efvk ${SOURCES})
 
 set(INCLUDES ${SOURCE_DIR})
@@ -28,7 +32,8 @@ set(INCLUDES ${INCLUDES}
         ${DEPS}/glfw/include
         ${DEPS}/glm
         ${DEPS}/imgui
-        ${DEPS}/stb)
+        ${DEPS}/stb
+        ${DEPS}/VulkanMemoryAllocator/include)
 target_include_directories(efvk PRIVATE ${INCLUDES})
 
 add_subdirectory(deps/assimp)
@@ -43,10 +48,15 @@ target_link_libraries(efvk PRIVATE glm)
 add_subdirectory(deps/imgui)
 target_link_libraries(efvk PRIVATE imgui)
 
+add_subdirectory(deps/VulkanMemoryAllocator)
+target_link_libraries(efvk PRIVATE VulkanMemoryAllocator)
+
 find_package(Vulkan REQUIRED)
 target_link_libraries(efvk PRIVATE ${Vulkan_LIBRARIES})
 target_include_directories(efvk PRIVATE ${Vulkan_INCLUDE_DIRS})
 
+target_precompile_headers(efvk PRIVATE ${SOURCE_DIR}/efpch.h)
+
 target_compile_definitions(efvk PRIVATE DEBUG)
 
-target_compile_options(efvk PRIVATE -Wall -Wextra -Werror)
+target_compile_options(efvk PRIVATE -Werror -Wall -Wextra)

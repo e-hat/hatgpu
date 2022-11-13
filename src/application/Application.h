@@ -1,13 +1,12 @@
 #ifndef _INCLUDE_APPLICATION_H
 #define _INCLUDE_APPLICATION_H
+#include "efpch.h"
 
 #include "application/InputManager.h"
 #include "util/Time.h"
 
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-#include <vulkan/vulkan.hpp>
-
+#include <deque>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -80,6 +79,9 @@ class Application
 
     VkShaderModule createShaderModule(const std::vector<char> &code);
     void recreateSwapchain();
+
+    using Deleter = std::function<void()>;
+    std::deque<Deleter> mDeleters;
 
   private:
     void initWindow();

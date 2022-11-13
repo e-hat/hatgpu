@@ -12,3 +12,6 @@
 	url = https://github.com/TheCherno/glfw
 [submodule "glfw"]
 	url = https://github.com/glfw/glfw
+[submodule "deps/VulkanMemoryAllocator"]
+	path = deps/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator

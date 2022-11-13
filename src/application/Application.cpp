@@ -1,3 +1,5 @@
+#include "efpch.h"
+
 #include "application/Application.h"
 
 #include <algorithm>
@@ -241,6 +243,11 @@ void Application::initWindow()
     }
 
     mInputManager.SetGLFWCallbacks(mWindow, &mCamera);
+
+    mDeleters.emplace_back([this]() {
+        glfwDestroyWindow(mWindow);
+        glfwTerminate();
+    });
 }
 
 void Application::initVulkan()
@@ -252,6 +259,7 @@ void Application::initVulkan()
     createLogicalDevice();
     createSwapchain();
     createSwapchainImageViews();
+    mDeleters.emplace_back([this]() { cleanupSwapchain(); });
     createSyncObjects();
     createCommandPool();
     createCommandBuffers();
@@ -321,6 +329,8 @@ void Application::createInstance()
         throw std::runtime_error("Failed to create VkInstance");
     }
 
+    mDeleters.emplace_back([this] { vkDestroyInstance(mInstance, nullptr); });
+
     uint32_t availableExtensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &availableExtensionCount, nullptr);
     std::vector<VkExtensionProperties> availableExtensions(availableExtensionCount);
@@ -346,6 +356,9 @@ void Application::setupDebugMessenger()
     {
         throw std::runtime_error("Failed to setup debug messenger");
     }
+
+    mDeleters.emplace_back(
+        [this]() { DestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr); });
 }
 
 void Application::createSurface()
@@ -354,6 +367,8 @@ void Application::createSurface()
     {
         throw std::runtime_error("Failed to create window surface");
     }
+
+    mDeleters.emplace_back([this]() { vkDestroySurfaceKHR(mInstance, mSurface, nullptr); });
 }
 
 Application::QueueFamilyIndices Application::findQueueFamilies(const VkPhysicalDevice &device,
@@ -476,6 +491,8 @@ void Application::createLogicalDevice()
     {
         throw std::runtime_error("Unable to create logical device");
     }
+
+    mDeleters.emplace_back([this]() { vkDestroyDevice(mDevice, nullptr); });
 
     vkGetDeviceQueue(mDevice, *indices.graphicsFamily, 0, &mGraphicsQueue);
     vkGetDeviceQueue(mDevice, *indices.presentFamily, 0, &mPresentQueue);
@@ -624,6 +641,8 @@ void Application::createCommandPool()
     {
         throw std::runtime_error("Failed to create command pool");
     }
+
+    mDeleters.emplace_back([this]() { vkDestroyCommandPool(mDevice, mCommandPool, nullptr); });
 }
 
 void Application::createCommandBuffers()
@@ -666,6 +685,15 @@ void Application::createSyncObjects()
             throw std::runtime_error("Failed to create sync objects");
         }
     }
+
+    mDeleters.emplace_back([this]() {
+        for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+        {
+            vkDestroySemaphore(mDevice, mImageAvailableSemaphores[i], nullptr);
+            vkDestroySemaphore(mDevice, mRenderFinishedSemaphores[i], nullptr);
+            vkDestroyFence(mDevice, mInFlightFences[i], nullptr);
+        }
+    });
 }
 
 void Application::cleanupSwapchain()
@@ -703,27 +731,13 @@ void Application::recreateSwapchain()
 
 Application::~Application()
 {
-    vkDestroyCommandPool(mDevice, mCommandPool, nullptr);
+    vkDeviceWaitIdle(mDevice);
 
-    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+    while (!mDeleters.empty())
     {
-        vkDestroySemaphore(mDevice, mImageAvailableSemaphores[i], nullptr);
-        vkDestroySemaphore(mDevice, mRenderFinishedSemaphores[i], nullptr);
-        vkDestroyFence(mDevice, mInFlightFences[i], nullptr);
+        Deleter nextDeleter = mDeleters.back();
+        nextDeleter();
+        mDeleters.pop_back();
     }
-
-    cleanupSwapchain();
-
-    vkDestroyDevice(mDevice, nullptr);
-    if constexpr (kEnableValidationLayers)
-    {
-        DestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr);
-    }
-
-    vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
-    vkDestroyInstance(mInstance, nullptr);
-
-    glfwDestroyWindow(mWindow);
-    glfwTerminate();
 }
 }  // namespace efvk

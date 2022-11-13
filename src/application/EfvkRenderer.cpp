@@ -1,6 +1,9 @@
-#include "HelloTriangle.h"
+#include "efpch.h"
+
+#include "EfvkRenderer.h"
 
 #include <array>
+#include <cstring>
 #include <fstream>
 #include <stdexcept>
 
@@ -25,25 +28,76 @@ std::vector<char> readFile(const std::string &filename)
 
     return buffer;
 }
+
+struct SimpleVertex
+{
+    glm::vec2 pos;
+    glm::vec3 color;
+
+    static VkVertexInputBindingDescription getBindingDescription()
+    {
+        VkVertexInputBindingDescription bindingDescription{};
+        bindingDescription.binding   = 0;
+        bindingDescription.stride    = sizeof(SimpleVertex);
+        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        return bindingDescription;
+    }
+
+    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions()
+    {
+        std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions;
+
+        attributeDescriptions[0].binding  = 0;
+        attributeDescriptions[0].location = 0;
+        attributeDescriptions[0].format   = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[0].offset   = offsetof(SimpleVertex, pos);
+
+        attributeDescriptions[1].binding  = 0;
+        attributeDescriptions[1].location = 1;
+        attributeDescriptions[1].format   = VK_FORMAT_R32G32B32_SFLOAT;
+        attributeDescriptions[1].offset   = offsetof(SimpleVertex, color);
+
+        return attributeDescriptions;
+    }
+};
+constexpr std::array<SimpleVertex, 3> kVertices = {SimpleVertex{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+                                                   SimpleVertex{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+                                                   SimpleVertex{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
+
+struct AllocatedBuffer
+{
+    VkBuffer buffer;
+    VmaAllocation allocation;
+};
 }  // namespace
 
-HelloTriangle::HelloTriangle() : Application("Hello Triangle") {}
+EfvkRenderer::EfvkRenderer() : Application("Efvk Rendering Engine") {}
 
-void HelloTriangle::Init()
+void EfvkRenderer::Init()
 {
     createRenderPass();
     createGraphicsPipeline();
     createFramebuffers(mRenderPass);
+
+    VmaAllocatorCreateInfo allocatorInfo = {};
+    allocatorInfo.physicalDevice         = mPhysicalDevice;
+    allocatorInfo.device                 = mDevice;
+    allocatorInfo.instance               = mInstance;
+
+    if (vmaCreateAllocator(&allocatorInfo, &mAllocator) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create VMA allocator");
+    }
+
+    mDeleters.emplace_back([this]() { vmaDestroyAllocator(mAllocator); });
+
+    loadMeshes();
 }
 
-void HelloTriangle::Exit()
-{
-    vkDestroyPipeline(mDevice, mGraphicsPipeline, nullptr);
-    vkDestroyPipelineLayout(mDevice, mPipelineLayout, nullptr);
-    vkDestroyRenderPass(mDevice, mRenderPass, nullptr);
-}
+void EfvkRenderer::Exit() {}
 
-void HelloTriangle::OnRender()
+void EfvkRenderer::OnRender()
 {
     vkWaitForFences(mDevice, 1, &mInFlightFences[mCurrentFrameIndex], VK_TRUE,
                     std::numeric_limits<uint64_t>::max());
@@ -110,14 +164,14 @@ void HelloTriangle::OnRender()
         throw std::runtime_error("Failed to present swapchain image");
     }
 }
-void HelloTriangle::OnImGuiRender() {}
+void EfvkRenderer::OnImGuiRender() {}
 
-void HelloTriangle::OnRecreateSwapchain()
+void EfvkRenderer::OnRecreateSwapchain()
 {
     createFramebuffers(mRenderPass);
 }
 
-void HelloTriangle::createGraphicsPipeline()
+void EfvkRenderer::createGraphicsPipeline()
 {
     const auto vertShaderCode = readFile("shaders/bin/shader.vert.spv");
     const auto fragShaderCode = readFile("shaders/bin/shader.frag.spv");
@@ -142,6 +196,15 @@ void HelloTriangle::createGraphicsPipeline()
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    auto bindingDescription    = Vertex::getBindingDescription();
+    auto attributeDescriptions = Vertex::getAttributeDescriptions();
+
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions    = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount =
+        static_cast<uint32_t>(attributeDescriptions.size());
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -211,6 +274,9 @@ void HelloTriangle::createGraphicsPipeline()
         throw std::runtime_error("Failed to create pipeline layout object");
     }
 
+    mDeleters.emplace_back(
+        [this]() { vkDestroyPipelineLayout(mDevice, mPipelineLayout, nullptr); });
+
     std::array<VkDynamicState, 2> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
                                                    VK_DYNAMIC_STATE_SCISSOR};
     VkPipelineDynamicStateCreateInfo dynamicState{};
@@ -242,11 +308,13 @@ void HelloTriangle::createGraphicsPipeline()
         throw std::runtime_error("Failed to create graphics pipeline");
     }
 
+    mDeleters.emplace_back([this]() { vkDestroyPipeline(mDevice, mGraphicsPipeline, nullptr); });
+
     vkDestroyShaderModule(mDevice, vertShaderModule, nullptr);
     vkDestroyShaderModule(mDevice, fragShaderModule, nullptr);
 }
 
-void HelloTriangle::createRenderPass()
+void EfvkRenderer::createRenderPass()
 {
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format         = mSwapchainImageFormat;
@@ -290,9 +358,53 @@ void HelloTriangle::createRenderPass()
     {
         throw std::runtime_error("Failed to create render pass");
     }
+
+    mDeleters.emplace_back([this]() { vkDestroyRenderPass(mDevice, mRenderPass, nullptr); });
 }
 
-void HelloTriangle::recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex)
+void EfvkRenderer::loadMeshes()
+{
+    mTriangleMesh.vertices.resize(3);
+    mTriangleMesh.vertices.resize(3);
+
+    mTriangleMesh.vertices[0].position = {1.f, 1.f, 0.0f};
+    mTriangleMesh.vertices[1].position = {-1.f, 1.f, 0.0f};
+    mTriangleMesh.vertices[2].position = {0.f, -1.f, 0.0f};
+
+    mTriangleMesh.vertices[0].color = {0.f, 1.f, 0.0f};
+    mTriangleMesh.vertices[1].color = {0.f, 1.f, 0.0f};
+    mTriangleMesh.vertices[2].color = {0.f, 1.f, 0.0f};
+
+    uploadMesh(mTriangleMesh);
+}
+
+void EfvkRenderer::uploadMesh(Mesh &mesh)
+{
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size  = mesh.vertices.size() * sizeof(Vertex);
+    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+
+    VmaAllocationCreateInfo vmaAllocInfo{};
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+
+    if (vmaCreateBuffer(mAllocator, &bufferInfo, &vmaAllocInfo, &mesh.vertexBuffer.buffer,
+                        &mesh.vertexBuffer.allocation, nullptr) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to allocate vertex buffer while uploading a mesh");
+    }
+
+    mDeleters.emplace_back([this, mesh]() {
+        vmaDestroyBuffer(mAllocator, mesh.vertexBuffer.buffer, mesh.vertexBuffer.allocation);
+    });
+
+    void *data;
+    vmaMapMemory(mAllocator, mesh.vertexBuffer.allocation, &data);
+    std::memcpy(data, mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
+    vmaUnmapMemory(mAllocator, mesh.vertexBuffer.allocation);
+}
+
+void EfvkRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex)
 {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -329,6 +441,9 @@ void HelloTriangle::recordCommandBuffer(const VkCommandBuffer &commandBuffer, ui
     scissor.offset = {0, 0};
     scissor.extent = mSwapchainExtent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mTriangleMesh.vertexBuffer.buffer, &offset);
 
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 

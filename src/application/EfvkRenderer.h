@@ -1,17 +1,19 @@
-#ifndef _INCLUDE_HELLOTRIANGLE_H
-#define _INCLUDE_HELLOTRIANGLE_H
+#ifndef _INCLUDE_EFVKRENDERER_H
+#define _INCLUDE_EFVKRENDERER_H
+#include "efpch.h"
 
 #include "application/Application.h"
+#include "geometry/Mesh.h"
 
 #include <vector>
 
 namespace efvk
 {
 
-class HelloTriangle : public Application
+class EfvkRenderer : public Application
 {
   public:
-    HelloTriangle();
+    EfvkRenderer();
 
     void Init() override;
     void Exit() override;
@@ -23,11 +25,17 @@ class HelloTriangle : public Application
   private:
     void createRenderPass();
     void createGraphicsPipeline();
+    void createVertexBuffer();
     void recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex);
+
+    void loadMeshes();
+    void uploadMesh(Mesh &mesh);
 
     VkRenderPass mRenderPass;
     VkPipelineLayout mPipelineLayout;
     VkPipeline mGraphicsPipeline;
+    VmaAllocator mAllocator;
+    Mesh mTriangleMesh;
 };
 
 }  // namespace efvk
