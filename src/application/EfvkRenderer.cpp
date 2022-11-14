@@ -37,6 +37,13 @@ struct MeshPushConstants
     glm::vec4 data;
     glm::mat4x4 renderMatrix;
 };
+
+struct GpuCameraData
+{
+    glm::mat4 view;
+    glm::mat4 proj;
+    glm::mat4 viewproj;
+};
 }  // namespace
 
 EfvkRenderer::EfvkRenderer() : Application("Efvk Rendering Engine") {}
@@ -57,6 +64,7 @@ void EfvkRenderer::Init()
 
     createDepthImage();
     createRenderPass();
+    createDescriptors();
     createGraphicsPipeline();
     createFramebuffers(mRenderPass);
 
@@ -220,6 +228,82 @@ void EfvkRenderer::createDepthImage()
     });
 }
 
+void EfvkRenderer::createDescriptors()
+{
+    std::array<VkDescriptorPoolSize, 1> sizes = {
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10}};
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags         = 0;
+    poolInfo.maxSets       = 10;
+    poolInfo.poolSizeCount = static_cast<uint32_t>(sizes.size());
+    poolInfo.pPoolSizes    = sizes.data();
+
+    vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &mDescriptorPool);
+
+    VkDescriptorSetLayoutBinding cameraBufferBinding{};
+    cameraBufferBinding.binding         = 0;
+    cameraBufferBinding.descriptorCount = 1;
+    cameraBufferBinding.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    cameraBufferBinding.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutCreateInfo{};
+    layoutCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutCreateInfo.pNext        = nullptr;
+    layoutCreateInfo.bindingCount = 1;
+    layoutCreateInfo.flags        = 0;
+    layoutCreateInfo.pBindings    = &cameraBufferBinding;
+
+    vkCreateDescriptorSetLayout(mDevice, &layoutCreateInfo, nullptr, &mGlobalSetLayout);
+
+    mCameraBuffers.resize(kMaxFramesInFlight);
+    mGlobalDescriptors.resize(kMaxFramesInFlight);
+
+    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+    {
+        mCameraBuffers[i] = createBuffer(sizeof(GpuCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                         VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.pNext              = nullptr;
+        allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool     = mDescriptorPool;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts        = &mGlobalSetLayout;
+
+        vkAllocateDescriptorSets(mDevice, &allocInfo, &mGlobalDescriptors[i]);
+
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = mCameraBuffers[i].buffer;
+        bufferInfo.offset = 0;
+        bufferInfo.range  = sizeof(GpuCameraData);
+
+        VkWriteDescriptorSet setWrite{};
+        setWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        setWrite.pNext = nullptr;
+
+        setWrite.dstBinding = 0;
+        setWrite.dstSet     = mGlobalDescriptors[i];
+
+        setWrite.descriptorCount = 1;
+        setWrite.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        setWrite.pBufferInfo     = &bufferInfo;
+
+        vkUpdateDescriptorSets(mDevice, 1, &setWrite, 0, nullptr);
+    }
+
+    mDeleters.emplace_back([this]() {
+        vkDestroyDescriptorSetLayout(mDevice, mGlobalSetLayout, nullptr);
+        vkDestroyDescriptorPool(mDevice, mDescriptorPool, nullptr);
+
+        for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+        {
+            vmaDestroyBuffer(mAllocator, mCameraBuffers[i].buffer, mCameraBuffers[i].allocation);
+        }
+    });
+}
+
 void EfvkRenderer::createGraphicsPipeline()
 {
     const auto vertShaderCode = readFile("../shaders/bin/shader.vert.spv");
@@ -330,6 +414,9 @@ void EfvkRenderer::createGraphicsPipeline()
     pipelineLayoutCreateInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
     pipelineLayoutCreateInfo.pPushConstantRanges    = &pushConstant;
+
+    pipelineLayoutCreateInfo.setLayoutCount = 1;
+    pipelineLayoutCreateInfo.pSetLayouts    = &mGlobalSetLayout;
 
     if (vkCreatePipelineLayout(mDevice, &pipelineLayoutCreateInfo, nullptr, &mPipelineLayout) !=
         VK_SUCCESS)
@@ -454,6 +541,33 @@ void EfvkRenderer::createRenderPass()
     mDeleters.emplace_back([this]() { vkDestroyRenderPass(mDevice, mRenderPass, nullptr); });
 }
 
+AllocatedBuffer EfvkRenderer::createBuffer(size_t allocSize,
+                                           VkBufferUsageFlags usage,
+                                           VmaMemoryUsage memoryUsage)
+{
+    // allocate vertex buffer
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.pNext              = nullptr;
+
+    bufferInfo.size  = allocSize;
+    bufferInfo.usage = usage;
+
+    VmaAllocationCreateInfo vmaAllocInfo = {};
+    vmaAllocInfo.usage                   = memoryUsage;
+
+    AllocatedBuffer newBuffer;
+
+    // allocate the buffer
+    if (vmaCreateBuffer(mAllocator, &bufferInfo, &vmaAllocInfo, &newBuffer.buffer,
+                        &newBuffer.allocation, nullptr) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to allocate new buffer");
+    }
+
+    return newBuffer;
+}
+
 void EfvkRenderer::uploadMesh(Mesh &mesh)
 {
     std::cout << "uploading mesh\n";
@@ -512,10 +626,6 @@ void EfvkRenderer::createScene()
     monkey1.model->loadFromObj("../assets/monkey/monkey_smooth.obj");
     for (auto &mesh : monkey1.model->meshes)
     {
-        std::cout << "number of verts in mesh: " << mesh.vertices.size() << '\n';
-    }
-    for (auto &mesh : monkey1.model->meshes)
-    {
         uploadMesh(mesh);
     }
 
@@ -523,13 +633,9 @@ void EfvkRenderer::createScene()
     monkey1.transform = glm::rotate(monkey1.transform, 135.f, glm::vec3(1.f, 0.f, 0.f));
     mRenderables.push_back(monkey1);
 
-    RenderObject sponza;
+    /*RenderObject sponza;
     sponza.model = std::make_shared<Model>();
     sponza.model->loadFromObj("../assets/sponza/sponza.obj");
-    for (auto &mesh : sponza.model->meshes)
-    {
-        std::cout << "number of verts in mesh: " << mesh.vertices.size() << '\n';
-    }
 
     for (auto &mesh : sponza.model->meshes)
     {
@@ -540,21 +646,32 @@ void EfvkRenderer::createScene()
     auto rotate      = glm::rotate(glm::mat4(1.f), 180.f, glm::vec3(1.f, 0.f, 0.f));
     auto translate   = glm::translate(glm::mat4(1.f), glm::vec3(0.f, 5.f, 0.f));
     sponza.transform = translate * rotate * scale;
-    mRenderables.push_back(sponza);
+    mRenderables.push_back(sponza);*/
 }
 
 void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 {
-    const glm::mat4 view = mCamera.GetViewMatrix();
-    const glm::mat4 proj = mCamera.GetProjectionMatrix();
-    const glm::mat4 vp   = proj * view;
+    const glm::mat4 view     = mCamera.GetViewMatrix();
+    const glm::mat4 proj     = mCamera.GetProjectionMatrix();
+    const glm::mat4 viewproj = proj * view;
+
+    GpuCameraData cameraData;
+    cameraData.proj     = proj;
+    cameraData.view     = view;
+    cameraData.viewproj = viewproj;
+
+    void *data;
+    vmaMapMemory(mAllocator, mCameraBuffers[mCurrentFrameIndex].allocation, &data);
+    std::memcpy(data, &cameraData, sizeof(GpuCameraData));
+    vmaUnmapMemory(mAllocator, mCameraBuffers[mCurrentFrameIndex].allocation);
+
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 0, 1,
+                            &mGlobalDescriptors[mCurrentFrameIndex], 0, nullptr);
 
     for (const auto &object : mRenderables)
     {
-        glm::mat4 mvp = vp * object.transform;
-
         MeshPushConstants constants;
-        constants.renderMatrix = mvp;
+        constants.renderMatrix = object.transform;
 
         vkCmdPushConstants(commandBuffer, mPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(MeshPushConstants), &constants);
@@ -621,4 +738,17 @@ void EfvkRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer, uin
         throw std::runtime_error("Failed to end recording of command buffer");
     }
 }
+
+EfvkRenderer::~EfvkRenderer()
+{
+    vkDeviceWaitIdle(mDevice);
+
+    while (!mDeleters.empty())
+    {
+        Deleter nextDeleter = mDeleters.back();
+        nextDeleter();
+        mDeleters.pop_back();
+    }
+}
+
 }  // namespace efvk

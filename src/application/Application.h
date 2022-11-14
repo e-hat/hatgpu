@@ -17,7 +17,7 @@ class Application
 {
   public:
     Application(const std::string &windowName);
-    ~Application();
+    virtual ~Application();
 
     Application(const Application &other)            = delete;
     Application &operator=(const Application &other) = delete;
@@ -80,7 +80,6 @@ class Application
     void recreateSwapchain();
 
     using Deleter = std::function<void()>;
-    std::deque<Deleter> mDeleters;
 
   private:
     void initWindow();
@@ -98,6 +97,7 @@ class Application
     void createSyncObjects();
     void createCommandPool();
     void createCommandBuffers();
+    std::deque<Deleter> mDeleters;
 };
 }  // namespace efvk
 #endif

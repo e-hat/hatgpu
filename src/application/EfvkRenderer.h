@@ -6,6 +6,7 @@
 #include "geometry/Model.h"
 #include "scene/Camera.h"
 
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -19,6 +20,7 @@ class EfvkRenderer : public Application
 {
   public:
     EfvkRenderer();
+    ~EfvkRenderer() override;
 
     void Init() override;
     void Exit() override;
@@ -29,10 +31,15 @@ class EfvkRenderer : public Application
 
   private:
     void createRenderPass();
+    void createDescriptors();
     void createGraphicsPipeline();
     void createDepthImage();
     void createFramebuffers(const VkRenderPass &renderPass);
     void createScene();
+
+    AllocatedBuffer createBuffer(size_t allocSize,
+                                 VkBufferUsageFlags usage,
+                                 VmaMemoryUsage memoryUsage);
 
     void drawObjects(const VkCommandBuffer &commandBuffer);
     void recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex);
@@ -54,9 +61,16 @@ class EfvkRenderer : public Application
     AllocatedImage mDepthImage{};
     VkFormat mDepthFormat;
 
+    VkDescriptorSetLayout mGlobalSetLayout;
+    VkDescriptorPool mDescriptorPool;
+    std::vector<AllocatedBuffer> mCameraBuffers;
+    std::vector<VkDescriptorSet> mGlobalDescriptors;
+
     std::vector<RenderObject> mRenderables;
 
     uint32_t mFrameCount{0};
+
+    std::deque<Deleter> mDeleters;
 };
 
 }  // namespace efvk
