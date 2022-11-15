@@ -46,6 +46,7 @@ class Application
     VkInstance mInstance;
     VkDebugUtilsMessengerEXT mDebugMessenger;
     VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
+    VkPhysicalDeviceProperties mGpuProperties;
     VkDevice mDevice;
     VkSurfaceKHR mSurface;
     VkSwapchainKHR mSwapchain;

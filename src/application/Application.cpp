@@ -451,6 +451,8 @@ void Application::pickPhysicalDevice()
     {
         throw std::runtime_error("Failed to find a suitable GPU");
     }
+
+    vkGetPhysicalDeviceProperties(mPhysicalDevice, &mGpuProperties);
 }
 
 void Application::createLogicalDevice()

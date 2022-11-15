@@ -13,13 +13,14 @@ class aiScene;
 namespace efvk
 {
 
-struct Model
+class Model
 {
-    void loadFromObj(const std::string &filename);
-
-    void processNode(aiNode *node, const aiScene *scene);
-
+  public:
+    void loadFromObj(const std::string &filename, TextureManager &manager);
     std::vector<Mesh> meshes;
+
+  private:
+    void processNode(aiNode *node, const aiScene *scene, TextureManager &textureManager);
 };
 }  // namespace efvk
 

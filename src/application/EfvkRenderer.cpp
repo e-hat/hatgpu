@@ -62,6 +62,7 @@ void EfvkRenderer::Init()
 
     mDeleters.emplace_back([this]() { vmaDestroyAllocator(mAllocator); });
 
+    createUploadContext();
     createDepthImage();
     createRenderPass();
     createDescriptors();
@@ -180,25 +181,25 @@ void EfvkRenderer::createDepthImage()
 
     mDepthFormat = VK_FORMAT_D32_SFLOAT;
 
-    VkImageCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    info.pNext = nullptr;
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.pNext = nullptr;
 
-    info.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
 
-    info.format = mDepthFormat;
-    info.extent = depthImageExtent;
+    imageInfo.format = mDepthFormat;
+    imageInfo.extent = depthImageExtent;
 
-    info.mipLevels   = 1;
-    info.arrayLayers = 1;
-    info.samples     = VK_SAMPLE_COUNT_1_BIT;
-    info.tiling      = VK_IMAGE_TILING_OPTIMAL;
-    info.usage       = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    imageInfo.mipLevels   = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples     = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling      = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage       = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
     VmaAllocationCreateInfo allocationInfo{};
     allocationInfo.usage         = VMA_MEMORY_USAGE_GPU_ONLY;
     allocationInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (vmaCreateImage(mAllocator, &info, &allocationInfo, &mDepthImage.image,
+    if (vmaCreateImage(mAllocator, &imageInfo, &allocationInfo, &mDepthImage.image,
                        &mDepthImage.allocation, nullptr) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to allocate depth image");
@@ -464,6 +465,94 @@ void EfvkRenderer::createGraphicsPipeline()
     vkDestroyShaderModule(mDevice, fragShaderModule, nullptr);
 }
 
+void EfvkRenderer::createUploadContext()
+{
+    VkFenceCreateInfo uploadFenceCreateInfo{};
+    uploadFenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    uploadFenceCreateInfo.flags = 0;
+
+    if (vkCreateFence(mDevice, &uploadFenceCreateInfo, nullptr, &mUploadContext.uploadFence) !=
+        VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create upload context fence");
+    }
+
+    mDeleters.emplace_back(
+        [this]() { vkDestroyFence(mDevice, mUploadContext.uploadFence, nullptr); });
+
+    VkCommandPoolCreateInfo commandPoolCreateInfo{};
+    commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    commandPoolCreateInfo.pNext = nullptr;
+    commandPoolCreateInfo.flags = 0;
+
+    if (vkCreateCommandPool(mDevice, &commandPoolCreateInfo, nullptr,
+                            &mUploadContext.commandPool) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create upload context command pool");
+    }
+
+    mDeleters.emplace_back(
+        [this]() { vkDestroyCommandPool(mDevice, mUploadContext.commandPool, nullptr); });
+
+    VkCommandBufferAllocateInfo commandBufferAllocInfo{};
+    commandBufferAllocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    commandBufferAllocInfo.pNext              = nullptr;
+    commandBufferAllocInfo.commandPool        = mUploadContext.commandPool;
+    commandBufferAllocInfo.commandBufferCount = 1;
+    commandBufferAllocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+    if (vkAllocateCommandBuffers(mDevice, &commandBufferAllocInfo, &mUploadContext.commandBuffer) !=
+        VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to allocate upload context command buffer");
+    }
+}
+
+void EfvkRenderer::immediateSubmit(std::function<void(VkCommandBuffer)> &&function)
+{
+    VkCommandBuffer cmd = mUploadContext.commandBuffer;
+    VkCommandBufferBeginInfo cmdBeginInfo{};
+    cmdBeginInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    cmdBeginInfo.pNext            = nullptr;
+    cmdBeginInfo.pInheritanceInfo = nullptr;
+    cmdBeginInfo.flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    if (vkBeginCommandBuffer(cmd, &cmdBeginInfo) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to begin command buffer");
+    }
+
+    function(cmd);
+
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to end command buffer");
+    }
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.pNext = nullptr;
+
+    submitInfo.waitSemaphoreCount   = 0;
+    submitInfo.pWaitSemaphores      = nullptr;
+    submitInfo.pWaitDstStageMask    = nullptr;
+    submitInfo.commandBufferCount   = 1;
+    submitInfo.pCommandBuffers      = &cmd;
+    submitInfo.signalSemaphoreCount = 0;
+    submitInfo.pSignalSemaphores    = nullptr;
+
+    if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mUploadContext.uploadFence) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to submit to queue");
+    }
+
+    vkWaitForFences(mDevice, 1, &mUploadContext.uploadFence, true,
+                    std::numeric_limits<uint32_t>::max());
+    vkResetFences(mDevice, 1, &mUploadContext.uploadFence);
+
+    vkResetCommandPool(mDevice, mUploadContext.commandPool, 0);
+}
+
 void EfvkRenderer::createRenderPass()
 {
     // Initialize color attachment
@@ -570,83 +659,235 @@ AllocatedBuffer EfvkRenderer::createBuffer(size_t allocSize,
 
 void EfvkRenderer::uploadMesh(Mesh &mesh)
 {
-    std::cout << "uploading mesh\n";
-    // Create vertex buffers
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size  = mesh.vertices.size() * sizeof(Vertex);
-    std::cout << "buffer size " << bufferInfo.size << '\n';
-    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    // Uploading the vertex data followed by the index data in contiguous memory
+    const size_t verticesSize = mesh.vertices.size() * sizeof(Vertex);
+    const size_t indicesSize  = mesh.indices.size() * sizeof(Mesh::IndexType);
+    const size_t bufferSize   = verticesSize + indicesSize;
+
+    VkBufferCreateInfo stagingBufferInfo{};
+    stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    stagingBufferInfo.pNext = nullptr;
+    stagingBufferInfo.size  = bufferSize;
+    stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
     VmaAllocationCreateInfo vmaAllocInfo{};
-    vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
 
-    if (vmaCreateBuffer(mAllocator, &bufferInfo, &vmaAllocInfo, &mesh.vertexBuffer.buffer,
-                        &mesh.vertexBuffer.allocation, nullptr) != VK_SUCCESS)
+    AllocatedBuffer stagingBuffer;
+
+    if (vmaCreateBuffer(mAllocator, &stagingBufferInfo, &vmaAllocInfo, &stagingBuffer.buffer,
+                        &stagingBuffer.allocation, nullptr) != VK_SUCCESS)
     {
-        throw std::runtime_error("Failed to allocate vertex buffer while uploading a mesh");
+        throw std::runtime_error("Failed to create staging buffer for mesh data");
     }
 
-    mDeleters.emplace_back([this, mesh]() {
-        vmaDestroyBuffer(mAllocator, mesh.vertexBuffer.buffer, mesh.vertexBuffer.allocation);
-    });
-
     void *data;
-    vmaMapMemory(mAllocator, mesh.vertexBuffer.allocation, &data);
-    std::memcpy(data, mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
-    vmaUnmapMemory(mAllocator, mesh.vertexBuffer.allocation);
+    vmaMapMemory(mAllocator, stagingBuffer.allocation, &data);
+    auto charPtr = static_cast<char *>(data);
+    std::memcpy(data, mesh.vertices.data(), verticesSize);
+    std::memcpy(charPtr + verticesSize, mesh.indices.data(), indicesSize);
+    vmaUnmapMemory(mAllocator, stagingBuffer.allocation);
+
+    VkBufferCreateInfo vboInfo{};
+    vboInfo.sType      = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    vboInfo.pNext      = nullptr;
+    vboInfo.size       = verticesSize;
+    vboInfo.usage      = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    if (vmaCreateBuffer(mAllocator, &vboInfo, &vmaAllocInfo, &mesh.vertexBuffer.buffer,
+                        &mesh.vertexBuffer.allocation, nullptr) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to allocate vertex buffer");
+    }
 
     VkBufferCreateInfo iboInfo{};
     iboInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    iboInfo.size  = mesh.indices.size() * sizeof(mesh.indices[0]);
-    iboInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    iboInfo.pNext = nullptr;
+    iboInfo.size  = indicesSize;
+    iboInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
-    VmaAllocationCreateInfo iboAllocInfo{};
-    iboAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-
-    if (vmaCreateBuffer(mAllocator, &iboInfo, &iboAllocInfo, &mesh.indexBuffer.buffer,
+    if (vmaCreateBuffer(mAllocator, &iboInfo, &vmaAllocInfo, &mesh.indexBuffer.buffer,
                         &mesh.indexBuffer.allocation, nullptr) != VK_SUCCESS)
     {
-        throw std::runtime_error("Failed to allocate index buffer while uploading a mesh");
+        throw std::runtime_error("Failed to allocate index buffer");
     }
 
-    mDeleters.emplace_back([this, mesh] {
+    immediateSubmit([=](VkCommandBuffer cmd) {
+        VkBufferCopy vboCopy{};
+        vboCopy.dstOffset = 0;
+        vboCopy.srcOffset = 0;
+        vboCopy.size      = verticesSize;
+        vkCmdCopyBuffer(cmd, stagingBuffer.buffer, mesh.vertexBuffer.buffer, 1, &vboCopy);
+
+        VkBufferCopy iboCopy{};
+        iboCopy.dstOffset = 0;
+        iboCopy.srcOffset = verticesSize;
+        iboCopy.size      = indicesSize;
+        vkCmdCopyBuffer(cmd, stagingBuffer.buffer, mesh.indexBuffer.buffer, 1, &iboCopy);
+    });
+
+    mDeleters.emplace_back([this, mesh]() {
+        vmaDestroyBuffer(mAllocator, mesh.vertexBuffer.buffer, mesh.vertexBuffer.allocation);
         vmaDestroyBuffer(mAllocator, mesh.indexBuffer.buffer, mesh.indexBuffer.allocation);
     });
 
-    vmaMapMemory(mAllocator, mesh.indexBuffer.allocation, &data);
-    std::memcpy(data, mesh.indices.data(), mesh.indices.size() * sizeof(mesh.indices[0]));
-    vmaUnmapMemory(mAllocator, mesh.indexBuffer.allocation);
+    vmaDestroyBuffer(mAllocator, stagingBuffer.buffer, stagingBuffer.allocation);
+}
+
+void EfvkRenderer::uploadTextures(Mesh &mesh)
+{
+    for (const auto &[_, paths] : mesh.textures)
+    {
+        if (paths.empty())
+            continue;
+
+        const std::string &path = paths.front();
+        if (mTextureImages.contains(path))
+            continue;
+
+        std::shared_ptr<Texture> cpuTexture = mTextureManager.textures[path];
+        // Create staging buffer for image
+        VkDeviceSize imageSize = cpuTexture->width * cpuTexture->height * 4;
+        AllocatedBuffer stagingBuffer =
+            createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+
+        void *data;
+        vmaMapMemory(mAllocator, stagingBuffer.allocation, &data);
+        std::memcpy(data, cpuTexture->pixels, imageSize);
+        vmaUnmapMemory(mAllocator, stagingBuffer.allocation);
+
+        VkExtent3D imageExtent{};
+        imageExtent.width  = cpuTexture->width;
+        imageExtent.height = cpuTexture->height;
+        imageExtent.depth  = 1;
+
+        VkImageCreateInfo imageInfo{};
+        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.pNext = nullptr;
+
+        imageInfo.imageType = VK_IMAGE_TYPE_2D;
+
+        imageInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+        imageInfo.extent = imageExtent;
+
+        imageInfo.mipLevels   = 1;
+        imageInfo.arrayLayers = 1;
+        imageInfo.samples     = VK_SAMPLE_COUNT_1_BIT;
+        imageInfo.tiling      = VK_IMAGE_TILING_OPTIMAL;
+        imageInfo.usage       = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+        AllocatedImage newImage;
+        VmaAllocationCreateInfo imgAllocInfo{};
+        imgAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+        vmaCreateImage(mAllocator, &imageInfo, &imgAllocInfo, &newImage.image, &newImage.allocation,
+                       nullptr);
+
+        immediateSubmit([&](VkCommandBuffer cmd) {
+            VkImageSubresourceRange range;
+            range.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+            range.baseMipLevel   = 0;
+            range.levelCount     = 1;
+            range.baseArrayLayer = 0;
+            range.layerCount     = 1;
+
+            VkImageMemoryBarrier imageBarrierTransfer{};
+            imageBarrierTransfer.sType            = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            imageBarrierTransfer.oldLayout        = VK_IMAGE_LAYOUT_UNDEFINED;
+            imageBarrierTransfer.newLayout        = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            imageBarrierTransfer.image            = newImage.image;
+            imageBarrierTransfer.subresourceRange = range;
+            imageBarrierTransfer.srcAccessMask    = 0;
+            imageBarrierTransfer.dstAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                                 &imageBarrierTransfer);
+
+            VkBufferImageCopy copyRegion = {};
+            copyRegion.bufferOffset      = 0;
+            copyRegion.bufferRowLength   = 0;
+            copyRegion.bufferImageHeight = 0;
+
+            copyRegion.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+            copyRegion.imageSubresource.mipLevel       = 0;
+            copyRegion.imageSubresource.baseArrayLayer = 0;
+            copyRegion.imageSubresource.layerCount     = 1;
+            copyRegion.imageExtent                     = imageExtent;
+
+            // copy the buffer into the image
+            vkCmdCopyBufferToImage(cmd, stagingBuffer.buffer, newImage.image,
+                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+
+            VkImageMemoryBarrier imageBarrierRead = imageBarrierTransfer;
+
+            imageBarrierRead.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            imageBarrierRead.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+            imageBarrierRead.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            imageBarrierRead.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+            // barrier the image into the shader readable layout
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr,
+                                 1, &imageBarrierRead);
+        });
+
+        mTextureImages[path] = newImage;
+
+        VkImageViewCreateInfo imageViewInfo{};
+        imageViewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        imageViewInfo.pNext                           = nullptr;
+        imageViewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+        imageViewInfo.image                           = newImage.image;
+        imageViewInfo.format                          = VK_FORMAT_R8G8B8A8_SRGB;
+        imageViewInfo.subresourceRange.baseMipLevel   = 0;
+        imageViewInfo.subresourceRange.levelCount     = 1;
+        imageViewInfo.subresourceRange.baseArrayLayer = 0;
+        imageViewInfo.subresourceRange.layerCount     = 1;
+        imageViewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        VkImageView imageView;
+        vkCreateImageView(mDevice, &imageViewInfo, nullptr, &imageView);
+        mTextureViews[path] = imageView;
+
+        mDeleters.emplace_back([this, newImage]() {
+            vmaDestroyImage(mAllocator, newImage.image, newImage.allocation);
+        });
+
+        vmaDestroyBuffer(mAllocator, stagingBuffer.buffer, stagingBuffer.allocation);
+    }
 }
 
 void EfvkRenderer::createScene()
 {
     RenderObject monkey1;
     monkey1.model = std::make_shared<Model>();
-    monkey1.model->loadFromObj("../assets/monkey/monkey_smooth.obj");
+    monkey1.model->loadFromObj("../assets/monkey/monkey_smooth.obj", mTextureManager);
     for (auto &mesh : monkey1.model->meshes)
     {
         uploadMesh(mesh);
+        uploadTextures(mesh);
     }
 
     monkey1.transform = glm::translate(glm::mat4(1.f), glm::vec3(0.f, 0.f, -5.f));
     monkey1.transform = glm::rotate(monkey1.transform, 135.f, glm::vec3(1.f, 0.f, 0.f));
     mRenderables.push_back(monkey1);
 
-    /*RenderObject sponza;
+    RenderObject sponza;
     sponza.model = std::make_shared<Model>();
-    sponza.model->loadFromObj("../assets/sponza/sponza.obj");
+    sponza.model->loadFromObj("../assets/sponza/sponza.obj", mTextureManager);
 
     for (auto &mesh : sponza.model->meshes)
     {
         uploadMesh(mesh);
+        uploadTextures(mesh);
     }
 
     auto scale       = glm::scale(glm::mat4(1.f), glm::vec3(0.01f));
-    auto rotate      = glm::rotate(glm::mat4(1.f), 180.f, glm::vec3(1.f, 0.f, 0.f));
-    auto translate   = glm::translate(glm::mat4(1.f), glm::vec3(0.f, 5.f, 0.f));
+    auto rotate      = glm::rotate(glm::mat4(1.f), 160.5f, glm::vec3(1.f, 0.f, 0.f));
+    auto translate   = glm::translate(glm::mat4(1.f), glm::vec3(1.f, 0.f, 0.f));
     sponza.transform = translate * rotate * scale;
-    mRenderables.push_back(sponza);*/
+    mRenderables.push_back(sponza);
 }
 
 void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)

@@ -5,7 +5,9 @@
 #include "efvk_types.h"
 
 #include <array>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace efvk
@@ -49,10 +51,45 @@ struct Vertex
     }
 };
 
+struct Texture
+{
+    Texture(void *pixels, uint32_t width, uint32_t height)
+        : pixels(pixels), width(width), height(height)
+    {}
+    ~Texture();
+
+    Texture(const Texture &other)            = delete;
+    Texture &operator=(const Texture &other) = delete;
+
+    Texture(Texture &&other) noexcept : pixels(other.pixels) { other.pixels = nullptr; }
+    Texture &operator=(Texture &&other) noexcept
+    {
+        pixels       = other.pixels;
+        other.pixels = nullptr;
+        return *this;
+    }
+
+    void *pixels;
+    uint32_t width;
+    uint32_t height;
+};
+
+// Caches and manages CPU texture data
+struct TextureManager
+{
+    void loadTexture(const std::string &file);
+    std::unordered_map<std::string, std::shared_ptr<Texture>> textures;
+};
+
 struct Mesh
 {
+    using IndexType = uint32_t;
+
     std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
+    std::vector<IndexType> indices;
+    // Maps texture type to lists of texture paths
+    // For example, ALBEDO -> { "texture1.png", "texture2.png" }
+    std::unordered_map<std::string, std::vector<std::string>> textures;
 
     AllocatedBuffer vertexBuffer;
     AllocatedBuffer indexBuffer;

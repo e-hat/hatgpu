@@ -8,7 +8,28 @@
 
 namespace efvk
 {
-void Model::loadFromObj(const std::string &filename)
+namespace
+{
+std::vector<std::string> loadMaterialTextures(aiMaterial *mat,
+                                              aiTextureType typ,
+                                              TextureManager &manager)
+{
+    size_t numTextures = mat->GetTextureCount(typ);
+    std::vector<std::string> texturePaths;
+    texturePaths.reserve(numTextures);
+    for (size_t i = 0; i < numTextures; ++i)
+    {
+        aiString str;
+        mat->GetTexture(typ, i, &str);
+        manager.loadTexture(str.C_Str());
+        texturePaths.emplace_back(str.C_Str());
+    }
+
+    return texturePaths;
+}
+}  // namespace
+
+void Model::loadFromObj(const std::string &filename, TextureManager &manager)
 {
     Assimp::Importer importer;
     const aiScene *scene =
@@ -24,15 +45,16 @@ void Model::loadFromObj(const std::string &filename)
     // Group meshes by material
     meshes.resize(scene->mNumMaterials - 1);
 
-    processNode(scene->mRootNode, scene);
+    processNode(scene->mRootNode, scene, manager);
 }
 
-void Model::processNode(aiNode *node, const aiScene *scene)
+void Model::processNode(aiNode *node, const aiScene *scene, TextureManager &manager)
 {
     for (size_t i = 0; i < node->mNumMeshes; ++i)
     {
         aiMesh *mesh             = scene->mMeshes[node->mMeshes[i]];
         size_t meshIndex         = mesh->mMaterialIndex - 1;
+        Mesh &efMesh             = meshes[meshIndex];
         size_t numVerticesBefore = meshes[meshIndex].vertices.size();
         for (size_t j = 0; j < mesh->mNumVertices; ++j)
         {
@@ -50,7 +72,7 @@ void Model::processNode(aiNode *node, const aiScene *scene)
 
             v.color = normal;
 
-            meshes[meshIndex].vertices.push_back(v);
+            efMesh.vertices.push_back(v);
         }
 
         for (size_t j = 0; j < mesh->mNumFaces; ++j)
@@ -58,9 +80,15 @@ void Model::processNode(aiNode *node, const aiScene *scene)
             aiFace face = mesh->mFaces[j];
             for (size_t k = 0; k < face.mNumIndices; ++k)
             {
-                meshes[meshIndex].indices.push_back(face.mIndices[k] + numVerticesBefore);
+                efMesh.indices.push_back(face.mIndices[k] + numVerticesBefore);
             }
         }
+
+        aiMaterial *mat              = scene->mMaterials[mesh->mMaterialIndex];
+        efMesh.textures["ALBEDO"]    = loadMaterialTextures(mat, aiTextureType_BASE_COLOR, manager);
+        efMesh.textures["METALNESS"] = loadMaterialTextures(mat, aiTextureType_METALNESS, manager);
+        efMesh.textures["ROUGHNESS"] =
+            loadMaterialTextures(mat, aiTextureType_DIFFUSE_ROUGHNESS, manager);
     }
 }
 }  // namespace efvk

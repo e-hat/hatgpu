@@ -5,8 +5,8 @@
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 #include <assimp/Importer.hpp>
-
-#include <glm/gtx/string_cast.hpp>
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 #include <iostream>
 
@@ -14,6 +14,7 @@ namespace efvk
 {
 namespace
 {
+
 void processNode(aiNode *node, const aiScene *scene, std::vector<Vertex> &vertices)
 {
     for (size_t i = 0; i < node->mNumMeshes; ++i)
@@ -46,6 +47,30 @@ void processNode(aiNode *node, const aiScene *scene, std::vector<Vertex> &vertic
     }
 }
 }  // namespace
+
+void TextureManager::loadTexture(const std::string &file)
+{
+    if (textures.contains(file))
+    {
+        return;
+    }
+
+    int width, height, channels;
+    stbi_uc *ucPixels = stbi_load(file.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+
+    if (ucPixels == nullptr)
+    {
+        throw std::runtime_error(std::string("Failed to load texture file: ") + file);
+    }
+
+    auto result    = std::make_shared<Texture>(static_cast<void *>(ucPixels), width, height);
+    textures[file] = std::move(result);
+}
+
+Texture::~Texture()
+{
+    stbi_image_free(pixels);
+}
 
 bool Mesh::loadFromObj(const std::string &filename)
 {

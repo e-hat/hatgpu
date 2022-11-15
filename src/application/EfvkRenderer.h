@@ -30,6 +30,7 @@ class EfvkRenderer : public Application
     void OnRecreateSwapchain() override;
 
   private:
+    void createUploadContext();
     void createRenderPass();
     void createDescriptors();
     void createGraphicsPipeline();
@@ -45,12 +46,23 @@ class EfvkRenderer : public Application
     void recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex);
 
     void uploadMesh(Mesh &mesh);
+    void uploadTextures(Mesh &mesh);
 
     struct RenderObject
     {
         std::shared_ptr<Model> model;
         glm::mat4 transform;
     };
+
+    struct UploadContext
+    {
+        VkFence uploadFence;
+        VkCommandPool commandPool;
+        VkCommandBuffer commandBuffer;
+    };
+    UploadContext mUploadContext;
+
+    void immediateSubmit(std::function<void(VkCommandBuffer cmd)> &&function);
 
     VkRenderPass mRenderPass;
     VkPipelineLayout mPipelineLayout;
@@ -67,6 +79,9 @@ class EfvkRenderer : public Application
     std::vector<VkDescriptorSet> mGlobalDescriptors;
 
     std::vector<RenderObject> mRenderables;
+    TextureManager mTextureManager;
+    std::unordered_map<std::string, AllocatedImage> mTextureImages;
+    std::unordered_map<std::string, VkImageView> mTextureViews;
 
     uint32_t mFrameCount{0};
 
