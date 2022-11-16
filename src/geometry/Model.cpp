@@ -4,6 +4,8 @@
 #include <assimp/scene.h>
 #include <assimp/Importer.hpp>
 
+#include <glm/gtx/string_cast.hpp>
+
 #include <iostream>
 
 namespace efvk
@@ -70,7 +72,9 @@ void Model::processNode(aiNode *node, const aiScene *scene, TextureManager &mana
             normal.y          = mesh->mNormals[j].y;
             normal.z          = mesh->mNormals[j].z;
 
-            v.color = normal;
+            glm::vec2 &uv = v.uv;
+            uv.x          = mesh->mTextureCoords[0][j].x;
+            uv.y          = 1 - mesh->mTextureCoords[0][j].y;
 
             efMesh.vertices.push_back(v);
         }

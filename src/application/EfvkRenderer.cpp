@@ -1,6 +1,7 @@
 #include "efpch.h"
 
 #include "EfvkRenderer.h"
+#include "initializers.h"
 
 #include <glm/gtx/string_cast.hpp>
 
@@ -95,19 +96,13 @@ void EfvkRenderer::OnRender()
     vkResetCommandBuffer(mCommandBuffers[mCurrentFrameIndex], 0);
     recordCommandBuffer(mCommandBuffers[mCurrentFrameIndex], mCurrentImageIndex);
 
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-
+    VkSubmitInfo submitInfo = init::submitInfo(&mCommandBuffers[mCurrentFrameIndex]);
     std::array<VkSemaphore, 1> waitSemaphores = {mImageAvailableSemaphores[mCurrentFrameIndex]};
     std::array<VkPipelineStageFlags, 1> waitStages = {
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    submitInfo.waitSemaphoreCount = waitSemaphores.size();
-    submitInfo.pWaitSemaphores    = waitSemaphores.data();
-    submitInfo.pWaitDstStageMask  = waitStages.data();
-
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers    = &mCommandBuffers[mCurrentFrameIndex];
-
+    submitInfo.waitSemaphoreCount               = waitSemaphores.size();
+    submitInfo.pWaitSemaphores                  = waitSemaphores.data();
+    submitInfo.pWaitDstStageMask                = waitStages.data();
     std::array<VkSemaphore, 1> signalSemaphores = {mRenderFinishedSemaphores[mCurrentFrameIndex]};
     submitInfo.signalSemaphoreCount             = signalSemaphores.size();
     submitInfo.pSignalSemaphores                = signalSemaphores.data();
@@ -118,17 +113,15 @@ void EfvkRenderer::OnRender()
         throw std::runtime_error("Failed to submit draw command buffer");
     }
 
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores    = signalSemaphores.data();
-
+    VkPresentInfoKHR presentInfo             = init::presentInfo();
+    presentInfo.waitSemaphoreCount           = 1;
+    presentInfo.pWaitSemaphores              = signalSemaphores.data();
     std::array<VkSwapchainKHR, 1> swapchains = {mSwapchain};
     presentInfo.swapchainCount               = 1;
     presentInfo.pSwapchains                  = swapchains.data();
     presentInfo.pImageIndices                = &mCurrentImageIndex;
-    VkResult presentResult                   = vkQueuePresentKHR(mPresentQueue, &presentInfo);
+
+    VkResult presentResult = vkQueuePresentKHR(mPresentQueue, &presentInfo);
 
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR ||
         mFramebufferResized)
@@ -158,14 +151,10 @@ void EfvkRenderer::createFramebuffers(const VkRenderPass &renderPass)
     {
         std::array<VkImageView, 2> attachments = {mSwapchainImageViews[i], mDepthImageView};
 
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass      = renderPass;
+        VkFramebufferCreateInfo framebufferInfo =
+            init::framebufferInfo(renderPass, mSwapchainExtent);
         framebufferInfo.attachmentCount = attachments.size();
         framebufferInfo.pAttachments    = attachments.data();
-        framebufferInfo.width           = mSwapchainExtent.width;
-        framebufferInfo.height          = mSwapchainExtent.height;
-        framebufferInfo.layers          = 1;
 
         if (vkCreateFramebuffer(mDevice, &framebufferInfo, nullptr, &mSwapchainFramebuffers[i]) !=
             VK_SUCCESS)
@@ -181,20 +170,10 @@ void EfvkRenderer::createDepthImage()
 
     mDepthFormat = VK_FORMAT_D32_SFLOAT;
 
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.pNext = nullptr;
-
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
-
-    imageInfo.format = mDepthFormat;
-    imageInfo.extent = depthImageExtent;
-
-    imageInfo.mipLevels   = 1;
-    imageInfo.arrayLayers = 1;
-    imageInfo.samples     = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling      = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage       = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    VkImageCreateInfo imageInfo = init::imageInfo(
+        mDepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling  = VK_IMAGE_TILING_OPTIMAL;
 
     VmaAllocationCreateInfo allocationInfo{};
     allocationInfo.usage         = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -205,19 +184,8 @@ void EfvkRenderer::createDepthImage()
         throw std::runtime_error("Failed to allocate depth image");
     }
 
-    VkImageViewCreateInfo viewInfo = {};
-    viewInfo.sType                 = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.pNext                 = nullptr;
-
-    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.image                           = mDepthImage.image;
-    viewInfo.format                          = mDepthFormat;
-    viewInfo.subresourceRange.baseMipLevel   = 0;
-    viewInfo.subresourceRange.levelCount     = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount     = 1;
-    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT;
-
+    VkImageViewCreateInfo viewInfo =
+        init::imageViewInfo(mDepthFormat, mDepthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT);
     if (vkCreateImageView(mDevice, &viewInfo, nullptr, &mDepthImageView) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to create depth image view");
@@ -243,11 +211,8 @@ void EfvkRenderer::createDescriptors()
 
     vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &mDescriptorPool);
 
-    VkDescriptorSetLayoutBinding cameraBufferBinding{};
-    cameraBufferBinding.binding         = 0;
-    cameraBufferBinding.descriptorCount = 1;
-    cameraBufferBinding.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    cameraBufferBinding.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT;
+    VkDescriptorSetLayoutBinding cameraBufferBinding = init::descriptorSetLayoutBinding(
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
 
     VkDescriptorSetLayoutCreateInfo layoutCreateInfo{};
     layoutCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -280,17 +245,8 @@ void EfvkRenderer::createDescriptors()
         bufferInfo.offset = 0;
         bufferInfo.range  = sizeof(GpuCameraData);
 
-        VkWriteDescriptorSet setWrite{};
-        setWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        setWrite.pNext = nullptr;
-
-        setWrite.dstBinding = 0;
-        setWrite.dstSet     = mGlobalDescriptors[i];
-
-        setWrite.descriptorCount = 1;
-        setWrite.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        setWrite.pBufferInfo     = &bufferInfo;
-
+        VkWriteDescriptorSet setWrite = init::writeDescriptorBuffer(
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, mGlobalDescriptors[i], &bufferInfo, 0);
         vkUpdateDescriptorSets(mDevice, 1, &setWrite, 0, nullptr);
     }
 
@@ -313,23 +269,14 @@ void EfvkRenderer::createGraphicsPipeline()
     VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
     VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
 
-    VkPipelineShaderStageCreateInfo vertStageCreateInfo{};
-    vertStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertStageCreateInfo.stage  = VK_SHADER_STAGE_VERTEX_BIT;
-    vertStageCreateInfo.module = vertShaderModule;
-    vertStageCreateInfo.pName  = "main";
-
-    VkPipelineShaderStageCreateInfo fragStageCreateInfo{};
-    fragStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragStageCreateInfo.stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragStageCreateInfo.module = fragShaderModule;
-    fragStageCreateInfo.pName  = "main";
-
+    VkPipelineShaderStageCreateInfo vertStageCreateInfo =
+        init::pipelineShaderStageInfo(VK_SHADER_STAGE_VERTEX_BIT, vertShaderModule);
+    VkPipelineShaderStageCreateInfo fragStageCreateInfo =
+        init::pipelineShaderStageInfo(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
     std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages = {vertStageCreateInfo,
                                                                    fragStageCreateInfo};
 
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
-    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo = init::vertexInputInfo();
 
     auto bindingDescription    = Vertex::getBindingDescription();
     auto attributeDescriptions = Vertex::getAttributeDescriptions();
@@ -340,10 +287,8 @@ void EfvkRenderer::createGraphicsPipeline()
         static_cast<uint32_t>(attributeDescriptions.size());
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-    inputAssembly.sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly =
+        init::inputAssemblyInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 
     VkViewport viewport{};
     viewport.x        = 0.0f;
@@ -364,41 +309,23 @@ void EfvkRenderer::createGraphicsPipeline()
     viewportState.scissorCount  = 1;
     viewportState.pScissors     = &scissor;
 
-    VkPipelineRasterizationStateCreateInfo rasterizer{};
-    rasterizer.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.depthClampEnable        = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode             = VK_POLYGON_MODE_FILL;
-    rasterizer.lineWidth               = 1.0f;
-    rasterizer.cullMode                = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace               = VK_FRONT_FACE_CLOCKWISE;
-    rasterizer.depthBiasEnable         = VK_FALSE;
+    VkPipelineRasterizationStateCreateInfo rasterizer =
+        init::rasterizationInfo(VK_POLYGON_MODE_FILL);
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
 
-    VkPipelineMultisampleStateCreateInfo multisampling{};
-    multisampling.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.sampleShadingEnable  = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineMultisampleStateCreateInfo multisampling = init::multisampleInfo();
 
-    VkPipelineDepthStencilStateCreateInfo depthStencilStateCreateInfo{};
-    depthStencilStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencilStateCreateInfo.pNext = nullptr;
-    depthStencilStateCreateInfo.depthTestEnable       = VK_TRUE;
-    depthStencilStateCreateInfo.depthWriteEnable      = VK_TRUE;
-    depthStencilStateCreateInfo.depthCompareOp        = VK_COMPARE_OP_LESS_OR_EQUAL;
-    depthStencilStateCreateInfo.depthBoundsTestEnable = VK_FALSE;
-    depthStencilStateCreateInfo.stencilTestEnable     = VK_FALSE;
+    VkPipelineDepthStencilStateCreateInfo depthStencilStateCreateInfo =
+        init::pipelineDepthStencilInfo(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable         = VK_FALSE;
-    colorBlendAttachment.blendEnable         = VK_TRUE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
-    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachment.alphaBlendOp        = VK_BLEND_OP_ADD;
+    VkPipelineColorBlendAttachmentState colorBlendAttachment = init::colorBlendAttachmentState();
+    colorBlendAttachment.blendEnable                         = VK_TRUE;
+    colorBlendAttachment.srcColorBlendFactor                 = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachment.dstColorBlendFactor                 = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachment.colorBlendOp                        = VK_BLEND_OP_ADD;
+    colorBlendAttachment.srcAlphaBlendFactor                 = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.dstAlphaBlendFactor                 = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachment.alphaBlendOp                        = VK_BLEND_OP_ADD;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -411,13 +338,11 @@ void EfvkRenderer::createGraphicsPipeline()
     pushConstant.size       = sizeof(MeshPushConstants);
     pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
-    pipelineLayoutCreateInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-    pipelineLayoutCreateInfo.pPushConstantRanges    = &pushConstant;
-
-    pipelineLayoutCreateInfo.setLayoutCount = 1;
-    pipelineLayoutCreateInfo.pSetLayouts    = &mGlobalSetLayout;
+    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = init::pipelineLayoutInfo();
+    pipelineLayoutCreateInfo.pushConstantRangeCount     = 1;
+    pipelineLayoutCreateInfo.pPushConstantRanges        = &pushConstant;
+    pipelineLayoutCreateInfo.setLayoutCount             = 1;
+    pipelineLayoutCreateInfo.pSetLayouts                = &mGlobalSetLayout;
 
     if (vkCreatePipelineLayout(mDevice, &pipelineLayoutCreateInfo, nullptr, &mPipelineLayout) !=
         VK_SUCCESS)
@@ -467,10 +392,7 @@ void EfvkRenderer::createGraphicsPipeline()
 
 void EfvkRenderer::createUploadContext()
 {
-    VkFenceCreateInfo uploadFenceCreateInfo{};
-    uploadFenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    uploadFenceCreateInfo.flags = 0;
-
+    VkFenceCreateInfo uploadFenceCreateInfo = init::fenceInfo();
     if (vkCreateFence(mDevice, &uploadFenceCreateInfo, nullptr, &mUploadContext.uploadFence) !=
         VK_SUCCESS)
     {
@@ -480,11 +402,7 @@ void EfvkRenderer::createUploadContext()
     mDeleters.emplace_back(
         [this]() { vkDestroyFence(mDevice, mUploadContext.uploadFence, nullptr); });
 
-    VkCommandPoolCreateInfo commandPoolCreateInfo{};
-    commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    commandPoolCreateInfo.pNext = nullptr;
-    commandPoolCreateInfo.flags = 0;
-
+    VkCommandPoolCreateInfo commandPoolCreateInfo = init::commandPoolInfo(mGraphicsQueueIndex);
     if (vkCreateCommandPool(mDevice, &commandPoolCreateInfo, nullptr,
                             &mUploadContext.commandPool) != VK_SUCCESS)
     {
@@ -494,13 +412,8 @@ void EfvkRenderer::createUploadContext()
     mDeleters.emplace_back(
         [this]() { vkDestroyCommandPool(mDevice, mUploadContext.commandPool, nullptr); });
 
-    VkCommandBufferAllocateInfo commandBufferAllocInfo{};
-    commandBufferAllocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    commandBufferAllocInfo.pNext              = nullptr;
-    commandBufferAllocInfo.commandPool        = mUploadContext.commandPool;
-    commandBufferAllocInfo.commandBufferCount = 1;
-    commandBufferAllocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-
+    VkCommandBufferAllocateInfo commandBufferAllocInfo =
+        init::commandBufferAllocInfo(mUploadContext.commandPool);
     if (vkAllocateCommandBuffers(mDevice, &commandBufferAllocInfo, &mUploadContext.commandBuffer) !=
         VK_SUCCESS)
     {
@@ -511,12 +424,8 @@ void EfvkRenderer::createUploadContext()
 void EfvkRenderer::immediateSubmit(std::function<void(VkCommandBuffer)> &&function)
 {
     VkCommandBuffer cmd = mUploadContext.commandBuffer;
-    VkCommandBufferBeginInfo cmdBeginInfo{};
-    cmdBeginInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    cmdBeginInfo.pNext            = nullptr;
-    cmdBeginInfo.pInheritanceInfo = nullptr;
-    cmdBeginInfo.flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
+    VkCommandBufferBeginInfo cmdBeginInfo =
+        init::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
     if (vkBeginCommandBuffer(cmd, &cmdBeginInfo) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to begin command buffer");
@@ -529,18 +438,7 @@ void EfvkRenderer::immediateSubmit(std::function<void(VkCommandBuffer)> &&functi
         throw std::runtime_error("Failed to end command buffer");
     }
 
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.pNext = nullptr;
-
-    submitInfo.waitSemaphoreCount   = 0;
-    submitInfo.pWaitSemaphores      = nullptr;
-    submitInfo.pWaitDstStageMask    = nullptr;
-    submitInfo.commandBufferCount   = 1;
-    submitInfo.pCommandBuffers      = &cmd;
-    submitInfo.signalSemaphoreCount = 0;
-    submitInfo.pSignalSemaphores    = nullptr;
-
+    VkSubmitInfo submitInfo = init::submitInfo(&cmd);
     if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mUploadContext.uploadFence) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to submit to queue");
@@ -635,9 +533,9 @@ AllocatedBuffer EfvkRenderer::createBuffer(size_t allocSize,
                                            VmaMemoryUsage memoryUsage)
 {
     // allocate vertex buffer
-    VkBufferCreateInfo bufferInfo = {};
-    bufferInfo.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.pNext              = nullptr;
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.pNext = nullptr;
 
     bufferInfo.size  = allocSize;
     bufferInfo.usage = usage;
@@ -762,21 +660,9 @@ void EfvkRenderer::uploadTextures(Mesh &mesh)
         imageExtent.height = cpuTexture->height;
         imageExtent.depth  = 1;
 
-        VkImageCreateInfo imageInfo{};
-        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.pNext = nullptr;
-
-        imageInfo.imageType = VK_IMAGE_TYPE_2D;
-
-        imageInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
-        imageInfo.extent = imageExtent;
-
-        imageInfo.mipLevels   = 1;
-        imageInfo.arrayLayers = 1;
-        imageInfo.samples     = VK_SAMPLE_COUNT_1_BIT;
-        imageInfo.tiling      = VK_IMAGE_TILING_OPTIMAL;
-        imageInfo.usage       = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-
+        VkImageCreateInfo imageInfo = init::imageInfo(
+            VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            imageExtent);
         AllocatedImage newImage;
         VmaAllocationCreateInfo imgAllocInfo{};
         imgAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -835,17 +721,8 @@ void EfvkRenderer::uploadTextures(Mesh &mesh)
 
         mTextureImages[path] = newImage;
 
-        VkImageViewCreateInfo imageViewInfo{};
-        imageViewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        imageViewInfo.pNext                           = nullptr;
-        imageViewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-        imageViewInfo.image                           = newImage.image;
-        imageViewInfo.format                          = VK_FORMAT_R8G8B8A8_SRGB;
-        imageViewInfo.subresourceRange.baseMipLevel   = 0;
-        imageViewInfo.subresourceRange.levelCount     = 1;
-        imageViewInfo.subresourceRange.baseArrayLayer = 0;
-        imageViewInfo.subresourceRange.layerCount     = 1;
-        imageViewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        VkImageViewCreateInfo imageViewInfo =
+            init::imageViewInfo(VK_FORMAT_R8G8B8A8_SRGB, newImage.image, VK_IMAGE_ASPECT_COLOR_BIT);
         VkImageView imageView;
         vkCreateImageView(mDevice, &imageViewInfo, nullptr, &imageView);
         mTextureViews[path] = imageView;
@@ -884,7 +761,7 @@ void EfvkRenderer::createScene()
     }
 
     auto scale       = glm::scale(glm::mat4(1.f), glm::vec3(0.01f));
-    auto rotate      = glm::rotate(glm::mat4(1.f), 160.5f, glm::vec3(1.f, 0.f, 0.f));
+    auto rotate      = glm::rotate(glm::mat4(1.f), 160.2f, glm::vec3(1.f, 0.f, 0.f));
     auto translate   = glm::translate(glm::mat4(1.f), glm::vec3(1.f, 0.f, 0.f));
     sponza.transform = translate * rotate * scale;
     mRenderables.push_back(sponza);
@@ -931,19 +808,14 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 
 void EfvkRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex)
 {
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    VkCommandBufferBeginInfo beginInfo = init::commandBufferBeginInfo();
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to begin recording command buffer");
     }
 
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass        = mRenderPass;
-    renderPassInfo.framebuffer       = mSwapchainFramebuffers[imageIndex];
-    renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = mSwapchainExtent;
+    VkRenderPassBeginInfo renderPassInfo = init::renderPassBeginInfo(
+        mRenderPass, mSwapchainExtent, mSwapchainFramebuffers[imageIndex]);
 
     VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
     VkClearValue depthClear{};

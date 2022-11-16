@@ -68,6 +68,7 @@ class Application
     VkCommandPool mCommandPool;
     std::vector<VkCommandBuffer> mCommandBuffers;
     VkQueue mGraphicsQueue;
+    uint32_t mGraphicsQueueIndex;
     VkQueue mPresentQueue;
     std::vector<VkSemaphore> mImageAvailableSemaphores;
     std::vector<VkSemaphore> mRenderFinishedSemaphores;

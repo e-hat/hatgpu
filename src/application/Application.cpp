@@ -1,6 +1,7 @@
 #include "efpch.h"
 
 #include "application/Application.h"
+#include "initializers.h"
 
 #include <algorithm>
 #include <array>
@@ -498,6 +499,7 @@ void Application::createLogicalDevice()
     mDeleters.emplace_back([this]() { vkDestroyDevice(mDevice, nullptr); });
 
     vkGetDeviceQueue(mDevice, *indices.graphicsFamily, 0, &mGraphicsQueue);
+    mGraphicsQueueIndex = *indices.graphicsFamily;
     vkGetDeviceQueue(mDevice, *indices.presentFamily, 0, &mPresentQueue);
 }
 
@@ -565,23 +567,12 @@ void Application::createSwapchainImageViews()
 
     for (size_t i = 0; i < mSwapchainImages.size(); ++i)
     {
-        VkImageViewCreateInfo createInfo{};
-        createInfo.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        createInfo.image    = mSwapchainImages[i];
-        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        createInfo.format   = mSwapchainImageFormat;
-
+        VkImageViewCreateInfo createInfo = init::imageViewInfo(
+            mSwapchainImageFormat, mSwapchainImages[i], VK_IMAGE_ASPECT_COLOR_BIT);
         createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-
-        createInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-        createInfo.subresourceRange.baseMipLevel   = 0;
-        createInfo.subresourceRange.levelCount     = 1;
-        createInfo.subresourceRange.baseArrayLayer = 0;
-        createInfo.subresourceRange.layerCount     = 1;
-
         if (vkCreateImageView(mDevice, &createInfo, nullptr, &mSwapchainImageViews[i]) !=
             VK_SUCCESS)
         {
@@ -610,11 +601,8 @@ void Application::createCommandPool()
 {
     QueueFamilyIndices queueFamilyIndices = findQueueFamilies(mPhysicalDevice, mSurface);
 
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    poolInfo.queueFamilyIndex = *queueFamilyIndices.graphicsFamily;
-
+    VkCommandPoolCreateInfo poolInfo = init::commandPoolInfo(
+        *queueFamilyIndices.graphicsFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     if (vkCreateCommandPool(mDevice, &poolInfo, nullptr, &mCommandPool) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to create command pool");
@@ -627,12 +615,8 @@ void Application::createCommandBuffers()
 {
     mCommandBuffers.resize(kMaxFramesInFlight);
 
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool        = mCommandPool;
-    allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = static_cast<uint32_t>(mCommandBuffers.size());
-
+    VkCommandBufferAllocateInfo allocInfo =
+        init::commandBufferAllocInfo(mCommandPool, static_cast<uint32_t>(mCommandBuffers.size()));
     if (vkAllocateCommandBuffers(mDevice, &allocInfo, mCommandBuffers.data()) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to allocate command buffer");
@@ -645,12 +629,8 @@ void Application::createSyncObjects()
     mRenderFinishedSemaphores.resize(kMaxFramesInFlight);
     mInFlightFences.resize(kMaxFramesInFlight);
 
-    VkSemaphoreCreateInfo semaphoreCreateInfo{};
-    semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-    VkFenceCreateInfo fenceCreateInfo{};
-    fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    VkSemaphoreCreateInfo semaphoreCreateInfo = init::semaphoreInfo();
+    VkFenceCreateInfo fenceCreateInfo         = init::fenceInfo(VK_FENCE_CREATE_SIGNALED_BIT);
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {

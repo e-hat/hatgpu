@@ -2,7 +2,7 @@
 #define _INCLUDE_MESH_H
 #include "efpch.h"
 
-#include "efvk_types.h"
+#include "types.h"
 
 #include <array>
 #include <memory>
@@ -16,7 +16,7 @@ struct Vertex
 {
     glm::vec3 position;
     glm::vec3 normal;
-    glm::vec3 color;
+    glm::vec2 uv;
 
     static VkVertexInputBindingDescription getBindingDescription()
     {
@@ -44,8 +44,8 @@ struct Vertex
 
         attributeDescriptions[2].binding  = 0;
         attributeDescriptions[2].location = 2;
-        attributeDescriptions[2].format   = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[2].offset   = offsetof(Vertex, color);
+        attributeDescriptions[2].format   = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[2].offset   = offsetof(Vertex, uv);
 
         return attributeDescriptions;
     }

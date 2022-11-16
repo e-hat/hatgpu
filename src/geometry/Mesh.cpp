@@ -35,8 +35,6 @@ void processNode(aiNode *node, const aiScene *scene, std::vector<Vertex> &vertic
             normal.y          = mesh->mNormals[j].y;
             normal.z          = mesh->mNormals[j].z;
 
-            v.color = normal;
-
             vertices.push_back(v);
         }
     }
