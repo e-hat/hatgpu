@@ -81,6 +81,13 @@ struct TextureManager
     std::unordered_map<std::string, std::shared_ptr<Texture>> textures;
 };
 
+enum class TextureType
+{
+    ALBEDO,
+    METALNESS,
+    ROUGHNESS
+};
+
 struct Mesh
 {
     using IndexType = uint32_t;
@@ -89,7 +96,7 @@ struct Mesh
     std::vector<IndexType> indices;
     // Maps texture type to lists of texture paths
     // For example, ALBEDO -> { "texture1.png", "texture2.png" }
-    std::unordered_map<std::string, std::vector<std::string>> textures;
+    std::unordered_map<TextureType, std::string> textures;
 
     AllocatedBuffer vertexBuffer;
     AllocatedBuffer indexBuffer;

@@ -74,6 +74,7 @@ class EfvkRenderer : public Application
     VkFormat mDepthFormat;
 
     VkDescriptorSetLayout mGlobalSetLayout;
+    VkDescriptorSetLayout mTextureSetLayout;
     VkDescriptorPool mDescriptorPool;
     std::vector<AllocatedBuffer> mCameraBuffers;
     std::vector<VkDescriptorSet> mGlobalDescriptors;
@@ -82,6 +83,7 @@ class EfvkRenderer : public Application
     TextureManager mTextureManager;
     std::unordered_map<std::string, AllocatedImage> mTextureImages;
     std::unordered_map<std::string, VkImageView> mTextureViews;
+    std::unordered_map<std::string, VkDescriptorSet> mTextureDescriptors;
 
     uint32_t mFrameCount{0};
 

@@ -14,7 +14,8 @@ namespace
 {
 std::vector<std::string> loadMaterialTextures(aiMaterial *mat,
                                               aiTextureType typ,
-                                              TextureManager &manager)
+                                              TextureManager &manager,
+                                              const std::string &dir)
 {
     size_t numTextures = mat->GetTextureCount(typ);
     std::vector<std::string> texturePaths;
@@ -23,8 +24,9 @@ std::vector<std::string> loadMaterialTextures(aiMaterial *mat,
     {
         aiString str;
         mat->GetTexture(typ, i, &str);
-        manager.loadTexture(str.C_Str());
-        texturePaths.emplace_back(str.C_Str());
+        const std::string path = dir + "/" + str.C_Str();
+        manager.loadTexture(path);
+        texturePaths.emplace_back(path);
     }
 
     return texturePaths;
@@ -47,6 +49,8 @@ void Model::loadFromObj(const std::string &filename, TextureManager &manager)
     // Group meshes by material
     meshes.resize(scene->mNumMaterials - 1);
 
+    mDirectory = filename.substr(0, filename.find_last_of('/'));
+
     processNode(scene->mRootNode, scene, manager);
 }
 
@@ -55,9 +59,9 @@ void Model::processNode(aiNode *node, const aiScene *scene, TextureManager &mana
     for (size_t i = 0; i < node->mNumMeshes; ++i)
     {
         aiMesh *mesh             = scene->mMeshes[node->mMeshes[i]];
-        size_t meshIndex         = mesh->mMaterialIndex - 1;
+        size_t meshIndex         = mesh->mMaterialIndex;
         Mesh &efMesh             = meshes[meshIndex];
-        size_t numVerticesBefore = meshes[meshIndex].vertices.size();
+        size_t numVerticesBefore = efMesh.vertices.size();
         for (size_t j = 0; j < mesh->mNumVertices; ++j)
         {
             Vertex v;
@@ -74,7 +78,7 @@ void Model::processNode(aiNode *node, const aiScene *scene, TextureManager &mana
 
             glm::vec2 &uv = v.uv;
             uv.x          = mesh->mTextureCoords[0][j].x;
-            uv.y          = 1 - mesh->mTextureCoords[0][j].y;
+            uv.y          = mesh->mTextureCoords[0][j].y;
 
             efMesh.vertices.push_back(v);
         }
@@ -88,11 +92,20 @@ void Model::processNode(aiNode *node, const aiScene *scene, TextureManager &mana
             }
         }
 
-        aiMaterial *mat              = scene->mMaterials[mesh->mMaterialIndex];
-        efMesh.textures["ALBEDO"]    = loadMaterialTextures(mat, aiTextureType_BASE_COLOR, manager);
-        efMesh.textures["METALNESS"] = loadMaterialTextures(mat, aiTextureType_METALNESS, manager);
-        efMesh.textures["ROUGHNESS"] =
-            loadMaterialTextures(mat, aiTextureType_DIFFUSE_ROUGHNESS, manager);
+        aiMaterial *mat = scene->mMaterials[mesh->mMaterialIndex];
+
+        auto albedos = loadMaterialTextures(mat, aiTextureType_BASE_COLOR, manager, mDirectory);
+        if (!albedos.empty())
+            efMesh.textures[TextureType::ALBEDO] = albedos.front();
+
+        auto metalnesses = loadMaterialTextures(mat, aiTextureType_METALNESS, manager, mDirectory);
+        if (!metalnesses.empty())
+            efMesh.textures[TextureType::METALNESS] = metalnesses.front();
+
+        auto roughnesses =
+            loadMaterialTextures(mat, aiTextureType_DIFFUSE_ROUGHNESS, manager, mDirectory);
+        if (!roughnesses.empty())
+            efMesh.textures[TextureType::ROUGHNESS] = roughnesses.front();
     }
 }
 }  // namespace efvk

@@ -35,7 +35,6 @@ std::vector<char> readFile(const std::string &filename)
 
 struct MeshPushConstants
 {
-    glm::vec4 data;
     glm::mat4x4 renderMatrix;
 };
 
@@ -199,18 +198,20 @@ void EfvkRenderer::createDepthImage()
 
 void EfvkRenderer::createDescriptors()
 {
-    std::array<VkDescriptorPoolSize, 1> sizes = {
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10}};
+    std::vector<VkDescriptorPoolSize> sizes = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
+                                               {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 90}};
 
+    // Creating the descriptor pool
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.flags         = 0;
-    poolInfo.maxSets       = 10;
+    poolInfo.maxSets       = 200;
     poolInfo.poolSizeCount = static_cast<uint32_t>(sizes.size());
     poolInfo.pPoolSizes    = sizes.data();
 
     vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &mDescriptorPool);
 
+    // Creating the camera info buffer, aka the global descriptor set
     VkDescriptorSetLayoutBinding cameraBufferBinding = init::descriptorSetLayoutBinding(
         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
 
@@ -250,8 +251,20 @@ void EfvkRenderer::createDescriptors()
         vkUpdateDescriptorSets(mDevice, 1, &setWrite, 0, nullptr);
     }
 
+    VkDescriptorSetLayoutBinding textureBinding = init::descriptorSetLayoutBinding(
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+    VkDescriptorSetLayoutCreateInfo textureLayoutInfo{};
+    textureLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    textureLayoutInfo.pNext        = nullptr;
+    textureLayoutInfo.bindingCount = 1;
+    textureLayoutInfo.pBindings    = &textureBinding;
+    textureLayoutInfo.flags        = 0;
+
+    vkCreateDescriptorSetLayout(mDevice, &textureLayoutInfo, nullptr, &mTextureSetLayout);
+
     mDeleters.emplace_back([this]() {
         vkDestroyDescriptorSetLayout(mDevice, mGlobalSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(mDevice, mTextureSetLayout, nullptr);
         vkDestroyDescriptorPool(mDevice, mDescriptorPool, nullptr);
 
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
@@ -341,8 +354,9 @@ void EfvkRenderer::createGraphicsPipeline()
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = init::pipelineLayoutInfo();
     pipelineLayoutCreateInfo.pushConstantRangeCount     = 1;
     pipelineLayoutCreateInfo.pPushConstantRanges        = &pushConstant;
-    pipelineLayoutCreateInfo.setLayoutCount             = 1;
-    pipelineLayoutCreateInfo.pSetLayouts                = &mGlobalSetLayout;
+    std::array<VkDescriptorSetLayout, 2> layouts        = {mGlobalSetLayout, mTextureSetLayout};
+    pipelineLayoutCreateInfo.setLayoutCount             = layouts.size();
+    pipelineLayoutCreateInfo.pSetLayouts                = layouts.data();
 
     if (vkCreatePipelineLayout(mDevice, &pipelineLayoutCreateInfo, nullptr, &mPipelineLayout) !=
         VK_SUCCESS)
@@ -635,12 +649,8 @@ void EfvkRenderer::uploadMesh(Mesh &mesh)
 
 void EfvkRenderer::uploadTextures(Mesh &mesh)
 {
-    for (const auto &[_, paths] : mesh.textures)
+    for (const auto &[_, path] : mesh.textures)
     {
-        if (paths.empty())
-            continue;
-
-        const std::string &path = paths.front();
         if (mTextureImages.contains(path))
             continue;
 
@@ -720,6 +730,10 @@ void EfvkRenderer::uploadTextures(Mesh &mesh)
         });
 
         mTextureImages[path] = newImage;
+        vmaDestroyBuffer(mAllocator, stagingBuffer.buffer, stagingBuffer.allocation);
+        mDeleters.emplace_back([this, newImage]() {
+            vmaDestroyImage(mAllocator, newImage.image, newImage.allocation);
+        });
 
         VkImageViewCreateInfo imageViewInfo =
             init::imageViewInfo(VK_FORMAT_R8G8B8A8_SRGB, newImage.image, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -727,32 +741,37 @@ void EfvkRenderer::uploadTextures(Mesh &mesh)
         vkCreateImageView(mDevice, &imageViewInfo, nullptr, &imageView);
         mTextureViews[path] = imageView;
 
-        mDeleters.emplace_back([this, newImage]() {
-            vmaDestroyImage(mAllocator, newImage.image, newImage.allocation);
-        });
+        VkDescriptorSetAllocateInfo textureDescriptorInfo{};
+        textureDescriptorInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        textureDescriptorInfo.pNext              = nullptr;
+        textureDescriptorInfo.descriptorPool     = mDescriptorPool;
+        textureDescriptorInfo.descriptorSetCount = 1;
+        textureDescriptorInfo.pSetLayouts        = &mTextureSetLayout;
+        mTextureDescriptors[path]                = {};
+        vkAllocateDescriptorSets(mDevice, &textureDescriptorInfo, &mTextureDescriptors[path]);
 
-        vmaDestroyBuffer(mAllocator, stagingBuffer.buffer, stagingBuffer.allocation);
+        VkSamplerCreateInfo samplerInfo = init::samplerInfo(VK_FILTER_LINEAR);
+        VkSampler sampler;
+        vkCreateSampler(mDevice, &samplerInfo, nullptr, &sampler);
+
+        mDeleters.emplace_back([this, sampler]() { vkDestroySampler(mDevice, sampler, nullptr); });
+        VkDescriptorImageInfo imageBufferInfo{};
+        imageBufferInfo.sampler     = sampler;
+        imageBufferInfo.imageView   = mTextureViews[path];
+        imageBufferInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkWriteDescriptorSet descriptorWrite =
+            init::writeDescriptorImage(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                       mTextureDescriptors[path], &imageBufferInfo, 0);
+        vkUpdateDescriptorSets(mDevice, 1, &descriptorWrite, 0, nullptr);
     }
 }
 
 void EfvkRenderer::createScene()
 {
-    RenderObject monkey1;
-    monkey1.model = std::make_shared<Model>();
-    monkey1.model->loadFromObj("../assets/monkey/monkey_smooth.obj", mTextureManager);
-    for (auto &mesh : monkey1.model->meshes)
-    {
-        uploadMesh(mesh);
-        uploadTextures(mesh);
-    }
-
-    monkey1.transform = glm::translate(glm::mat4(1.f), glm::vec3(0.f, 0.f, -5.f));
-    monkey1.transform = glm::rotate(monkey1.transform, 135.f, glm::vec3(1.f, 0.f, 0.f));
-    mRenderables.push_back(monkey1);
-
     RenderObject sponza;
     sponza.model = std::make_shared<Model>();
-    sponza.model->loadFromObj("../assets/sponza/sponza.obj", mTextureManager);
+    sponza.model->loadFromObj("../assets/sponza-gltf/Sponza.gltf", mTextureManager);
 
     for (auto &mesh : sponza.model->meshes)
     {
@@ -765,6 +784,13 @@ void EfvkRenderer::createScene()
     auto translate   = glm::translate(glm::mat4(1.f), glm::vec3(1.f, 0.f, 0.f));
     sponza.transform = translate * rotate * scale;
     mRenderables.push_back(sponza);
+
+    mDeleters.emplace_back([this]() {
+        for (const auto &[_, view] : mTextureViews)
+        {
+            vkDestroyImageView(mDevice, view, nullptr);
+        }
+    });
 }
 
 void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
@@ -794,12 +820,17 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
         vkCmdPushConstants(commandBuffer, mPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(MeshPushConstants), &constants);
 
-        for (const auto &mesh : object.model->meshes)
+        for (auto &mesh : object.model->meshes)
         {
+            if (!mesh.textures.contains(TextureType::ALBEDO))
+                continue;
             VkDeviceSize offset = 0;
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer.buffer, &offset);
-
             vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout,
+                                    1, 1, &mTextureDescriptors[mesh.textures[TextureType::ALBEDO]],
+                                    0, nullptr);
 
             vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
         }

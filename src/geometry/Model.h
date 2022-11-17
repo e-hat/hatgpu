@@ -22,6 +22,7 @@ class Model
 
   private:
     void processNode(aiNode *node, const aiScene *scene, TextureManager &textureManager);
+    std::string mDirectory;
 };
 }  // namespace efvk
 
