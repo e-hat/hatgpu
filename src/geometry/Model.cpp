@@ -100,12 +100,14 @@ void Model::processNode(aiNode *node, const aiScene *scene, TextureManager &mana
 
         auto metalnesses = loadMaterialTextures(mat, aiTextureType_METALNESS, manager, mDirectory);
         if (!metalnesses.empty())
-            efMesh.textures[TextureType::METALNESS] = metalnesses.front();
-
-        auto roughnesses =
-            loadMaterialTextures(mat, aiTextureType_DIFFUSE_ROUGHNESS, manager, mDirectory);
-        if (!roughnesses.empty())
-            efMesh.textures[TextureType::ROUGHNESS] = roughnesses.front();
+            efMesh.textures[TextureType::METALLIC_ROUGHNESS] = metalnesses.front();
+        else
+        {
+            auto roughnesses =
+                loadMaterialTextures(mat, aiTextureType_DIFFUSE_ROUGHNESS, manager, mDirectory);
+            if (!roughnesses.empty())
+                efMesh.textures[TextureType::METALLIC_ROUGHNESS] = roughnesses.front();
+        }
     }
 }
 }  // namespace efvk

@@ -199,7 +199,7 @@ void EfvkRenderer::createDepthImage()
 void EfvkRenderer::createDescriptors()
 {
     std::vector<VkDescriptorPoolSize> sizes = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
-                                               {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 90}};
+                                               {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 190}};
 
     // Creating the descriptor pool
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -251,13 +251,18 @@ void EfvkRenderer::createDescriptors()
         vkUpdateDescriptorSets(mDevice, 1, &setWrite, 0, nullptr);
     }
 
-    VkDescriptorSetLayoutBinding textureBinding = init::descriptorSetLayoutBinding(
+    VkDescriptorSetLayoutBinding albedoBinding = init::descriptorSetLayoutBinding(
         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+    VkDescriptorSetLayoutBinding metallicRoughnessBinding = init::descriptorSetLayoutBinding(
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+    std::array<VkDescriptorSetLayoutBinding, 2> textureBindings = {albedoBinding,
+                                                                   metallicRoughnessBinding};
+
     VkDescriptorSetLayoutCreateInfo textureLayoutInfo{};
     textureLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     textureLayoutInfo.pNext        = nullptr;
-    textureLayoutInfo.bindingCount = 1;
-    textureLayoutInfo.pBindings    = &textureBinding;
+    textureLayoutInfo.bindingCount = textureBindings.size();
+    textureLayoutInfo.pBindings    = textureBindings.data();
     textureLayoutInfo.flags        = 0;
 
     vkCreateDescriptorSetLayout(mDevice, &textureLayoutInfo, nullptr, &mTextureSetLayout);
@@ -649,9 +654,17 @@ void EfvkRenderer::uploadMesh(Mesh &mesh)
 
 void EfvkRenderer::uploadTextures(Mesh &mesh)
 {
-    for (const auto &[_, path] : mesh.textures)
+    VkDescriptorSetAllocateInfo textureDescriptorInfo{};
+    textureDescriptorInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    textureDescriptorInfo.pNext              = nullptr;
+    textureDescriptorInfo.descriptorPool     = mDescriptorPool;
+    textureDescriptorInfo.descriptorSetCount = 1;
+    textureDescriptorInfo.pSetLayouts        = &mTextureSetLayout;
+    vkAllocateDescriptorSets(mDevice, &textureDescriptorInfo, &mesh.descriptor);
+
+    for (const auto &[typ, path] : mesh.textures)
     {
-        if (mTextureImages.contains(path))
+        if (mGpuTextures.contains(path))
             continue;
 
         std::shared_ptr<Texture> cpuTexture = mTextureManager.textures[path];
@@ -729,7 +742,9 @@ void EfvkRenderer::uploadTextures(Mesh &mesh)
                                  1, &imageBarrierRead);
         });
 
-        mTextureImages[path] = newImage;
+        GpuTexture &dstTexture = mGpuTextures[path];
+
+        dstTexture.image = newImage;
         vmaDestroyBuffer(mAllocator, stagingBuffer.buffer, stagingBuffer.allocation);
         mDeleters.emplace_back([this, newImage]() {
             vmaDestroyImage(mAllocator, newImage.image, newImage.allocation);
@@ -737,32 +752,34 @@ void EfvkRenderer::uploadTextures(Mesh &mesh)
 
         VkImageViewCreateInfo imageViewInfo =
             init::imageViewInfo(VK_FORMAT_R8G8B8A8_SRGB, newImage.image, VK_IMAGE_ASPECT_COLOR_BIT);
-        VkImageView imageView;
-        vkCreateImageView(mDevice, &imageViewInfo, nullptr, &imageView);
-        mTextureViews[path] = imageView;
+        vkCreateImageView(mDevice, &imageViewInfo, nullptr, &dstTexture.imageView);
+    }
 
-        VkDescriptorSetAllocateInfo textureDescriptorInfo{};
-        textureDescriptorInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        textureDescriptorInfo.pNext              = nullptr;
-        textureDescriptorInfo.descriptorPool     = mDescriptorPool;
-        textureDescriptorInfo.descriptorSetCount = 1;
-        textureDescriptorInfo.pSetLayouts        = &mTextureSetLayout;
-        mTextureDescriptors[path]                = {};
-        vkAllocateDescriptorSets(mDevice, &textureDescriptorInfo, &mTextureDescriptors[path]);
-
+    for (const auto &[typ, path] : mesh.textures)
+    {
         VkSamplerCreateInfo samplerInfo = init::samplerInfo(VK_FILTER_LINEAR);
         VkSampler sampler;
         vkCreateSampler(mDevice, &samplerInfo, nullptr, &sampler);
-
         mDeleters.emplace_back([this, sampler]() { vkDestroySampler(mDevice, sampler, nullptr); });
+
         VkDescriptorImageInfo imageBufferInfo{};
         imageBufferInfo.sampler     = sampler;
-        imageBufferInfo.imageView   = mTextureViews[path];
+        imageBufferInfo.imageView   = mGpuTextures[path].imageView;
         imageBufferInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
+        uint32_t dstBinding = 0;
+        switch (typ)
+        {
+            case TextureType::ALBEDO:
+                dstBinding = 0;
+                break;
+            case TextureType::METALLIC_ROUGHNESS:
+                dstBinding = 1;
+                break;
+        }
         VkWriteDescriptorSet descriptorWrite =
-            init::writeDescriptorImage(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                       mTextureDescriptors[path], &imageBufferInfo, 0);
+            init::writeDescriptorImage(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, mesh.descriptor,
+                                       &imageBufferInfo, dstBinding);
         vkUpdateDescriptorSets(mDevice, 1, &descriptorWrite, 0, nullptr);
     }
 }
@@ -786,9 +803,9 @@ void EfvkRenderer::createScene()
     mRenderables.push_back(sponza);
 
     mDeleters.emplace_back([this]() {
-        for (const auto &[_, view] : mTextureViews)
+        for (const auto &[_, texture] : mGpuTextures)
         {
-            vkDestroyImageView(mDevice, view, nullptr);
+            vkDestroyImageView(mDevice, texture.imageView, nullptr);
         }
     });
 }
@@ -822,15 +839,16 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 
         for (auto &mesh : object.model->meshes)
         {
-            if (!mesh.textures.contains(TextureType::ALBEDO))
+            if (!mesh.textures.contains(TextureType::ALBEDO) ||
+                !mesh.textures.contains(TextureType::METALLIC_ROUGHNESS))
                 continue;
+
             VkDeviceSize offset = 0;
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer.buffer, &offset);
             vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout,
-                                    1, 1, &mTextureDescriptors[mesh.textures[TextureType::ALBEDO]],
-                                    0, nullptr);
+                                    1, 1, &mesh.descriptor, 0, nullptr);
 
             vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
         }

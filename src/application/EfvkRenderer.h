@@ -81,9 +81,12 @@ class EfvkRenderer : public Application
 
     std::vector<RenderObject> mRenderables;
     TextureManager mTextureManager;
-    std::unordered_map<std::string, AllocatedImage> mTextureImages;
-    std::unordered_map<std::string, VkImageView> mTextureViews;
-    std::unordered_map<std::string, VkDescriptorSet> mTextureDescriptors;
+    struct GpuTexture
+    {
+        AllocatedImage image;
+        VkImageView imageView;
+    };
+    std::unordered_map<std::string, GpuTexture> mGpuTextures;
 
     uint32_t mFrameCount{0};
 

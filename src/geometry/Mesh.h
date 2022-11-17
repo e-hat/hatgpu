@@ -84,8 +84,7 @@ struct TextureManager
 enum class TextureType
 {
     ALBEDO,
-    METALNESS,
-    ROUGHNESS
+    METALLIC_ROUGHNESS,
 };
 
 struct Mesh
@@ -97,6 +96,7 @@ struct Mesh
     // Maps texture type to lists of texture paths
     // For example, ALBEDO -> { "texture1.png", "texture2.png" }
     std::unordered_map<TextureType, std::string> textures;
+    VkDescriptorSet descriptor;
 
     AllocatedBuffer vertexBuffer;
     AllocatedBuffer indexBuffer;
