@@ -36,9 +36,9 @@ std::vector<std::string> loadMaterialTextures(aiMaterial *mat,
 void Model::loadFromObj(const std::string &filename, TextureManager &manager)
 {
     Assimp::Importer importer;
-    const aiScene *scene =
-        importer.ReadFile(filename, aiProcess_Triangulate | aiProcess_FlipUVs |
-                                        aiProcess_OptimizeMeshes | aiProcess_OptimizeGraph);
+    const aiScene *scene = importer.ReadFile(
+        filename, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_OptimizeMeshes |
+                      aiProcess_OptimizeGraph | aiProcess_ForceGenNormals);
 
     if (scene == nullptr || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE ||
         scene->mRootNode == nullptr)

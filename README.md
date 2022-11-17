@@ -3,6 +3,12 @@ This is a Vulkan version of my OpenGL engine,
 [efgl](https://github.com/e-hat/efgl). 
 
 ## Current Progress
+<img src="demo/sponza-pbr.png" alt="classic sponza again. this time with pbr
+lighting" />
+<p align="center"><i>Sponza again, this time with Cook-Torrance specular BRDF in
+the fragment shader. Used reinhard tonemapping and gamma correction as
+well.</i></p>
+
 <img src="demo/sponza-textures.png" alt="image of the classic sponza model, with
 albedo textures. There are apparent moire patterns" />
 <p align="center"><i>Model loading with texures. Needs some mip-mapping though,

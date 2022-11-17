@@ -43,6 +43,7 @@ struct GpuCameraData
     glm::mat4 view;
     glm::mat4 proj;
     glm::mat4 viewproj;
+    glm::vec3 position;
 };
 }  // namespace
 
@@ -820,6 +821,7 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
     cameraData.proj     = proj;
     cameraData.view     = view;
     cameraData.viewproj = viewproj;
+    cameraData.position = mCamera.Position;
 
     void *data;
     vmaMapMemory(mAllocator, mCameraBuffers[mCurrentFrameIndex].allocation, &data);
