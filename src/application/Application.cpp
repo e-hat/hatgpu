@@ -425,7 +425,11 @@ bool Application::isDeviceSuitable(const VkPhysicalDevice &device, const VkSurfa
             !swapchainSupport.formats.empty() && !swapchainSupport.presentModes.empty();
     }
 
-    return indices.IsComplete() && extensionsSupported && swapchainAdequate;
+    VkPhysicalDeviceFeatures supportedFeatures;
+    vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
+
+    return indices.IsComplete() && extensionsSupported && swapchainAdequate &&
+           supportedFeatures.samplerAnisotropy;
 }
 
 void Application::pickPhysicalDevice()
@@ -475,6 +479,7 @@ void Application::createLogicalDevice()
     }
 
     VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.samplerAnisotropy = VK_TRUE;
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType                = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;

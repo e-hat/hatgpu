@@ -4,11 +4,9 @@ This is a Vulkan version of my OpenGL engine,
 
 ## Current Progress
 <p align="center">
-<img src="demo/sponza-mipmapped.png" alt="classic sponza again. this time with pbr
-lighting" width="750" height="auto"/>
-<i>Sponza again, this time with Cook-Torrance specular BRDF in
-the fragment shader. Used reinhard tonemapping and gamma correction as
-well.</i>
+<img src="demo/sponza-mipmapped.png" alt="classic sponza again. with mipmapping
+and anisotropic filtering" width="750" height="auto"/>
+<i>Added mipmap generation and anisotropic filtering!!</i>
 </p>
 <br />
 <br />

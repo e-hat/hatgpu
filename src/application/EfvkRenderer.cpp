@@ -858,6 +858,11 @@ void EfvkRenderer::uploadTextures(Mesh &mesh)
         VkSamplerCreateInfo samplerInfo = init::samplerInfo(VK_FILTER_LINEAR);
         samplerInfo.mipmapMode          = VK_SAMPLER_MIPMAP_MODE_LINEAR;
         samplerInfo.maxLod              = mGpuTextures[path].mipLevels;
+        samplerInfo.anisotropyEnable    = VK_TRUE;
+        VkPhysicalDeviceProperties properties;
+        vkGetPhysicalDeviceProperties(mPhysicalDevice, &properties);
+        samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+        std::cout << samplerInfo.maxAnisotropy << '\n';
         VkSampler sampler;
         vkCreateSampler(mDevice, &samplerInfo, nullptr, &sampler);
         mDeleters.emplace_back([this, sampler]() { vkDestroySampler(mDevice, sampler, nullptr); });
