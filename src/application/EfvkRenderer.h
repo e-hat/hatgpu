@@ -85,6 +85,7 @@ class EfvkRenderer : public Application
     {
         AllocatedImage image;
         VkImageView imageView;
+        uint32_t mipLevels;
     };
     std::unordered_map<std::string, GpuTexture> mGpuTextures;
 

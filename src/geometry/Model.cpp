@@ -73,8 +73,8 @@ void Model::processNode(aiNode *node, const aiScene *scene, TextureManager &mana
 
             glm::vec3 &normal = v.normal;
             normal.x          = mesh->mNormals[j].x;
-            normal.y          = mesh->mNormals[j].y;
-            normal.z          = mesh->mNormals[j].z;
+            normal.y          = -mesh->mNormals[j].y;
+            normal.z          = -mesh->mNormals[j].z;
 
             glm::vec2 &uv = v.uv;
             uv.x          = mesh->mTextureCoords[0][j].x;

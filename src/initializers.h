@@ -44,9 +44,15 @@ VkPipelineColorBlendAttachmentState colorBlendAttachmentState();
 
 VkPipelineLayoutCreateInfo pipelineLayoutInfo();
 
-VkImageCreateInfo imageInfo(VkFormat format, VkImageUsageFlags usageFlags, VkExtent3D extent);
+VkImageCreateInfo imageInfo(VkFormat format,
+                            VkImageUsageFlags usageFlags,
+                            VkExtent3D extent,
+                            uint32_t mipLevels = 1);
 
-VkImageViewCreateInfo imageViewInfo(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags);
+VkImageViewCreateInfo imageViewInfo(VkFormat format,
+                                    VkImage image,
+                                    VkImageAspectFlags aspectFlags,
+                                    uint32_t mipLevels = 1);
 
 VkPipelineDepthStencilStateCreateInfo pipelineDepthStencilInfo(bool bDepthTest,
                                                                bool bDepthWrite,
