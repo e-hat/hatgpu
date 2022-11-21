@@ -18,3 +18,6 @@
 [submodule "deps/tracy"]
 	path = deps/tracy
 	url = https://github.com/wolfpld/tracy
+[submodule "deps/stb"]
+	path = deps/stb
+	url = https://github.com/nothings/stb
