@@ -7,8 +7,18 @@ layout(location = 3) in vec3 inCameraPos;
 
 layout(location = 0) out vec4 outColor;
 
-layout (set = 1, binding = 0) uniform sampler2D albedoTexture;
-layout (set = 1, binding = 1) uniform sampler2D metalnessRoughnessTexture;
+struct PointLight
+{
+    vec3 position;
+    vec3 color;
+};
+layout (std140, set = 1, binding = 0) readonly buffer LightBuffer
+{
+    PointLight lights[];
+} lightBuffer;
+
+layout (set = 2, binding = 0) uniform sampler2D albedoTexture;
+layout (set = 2, binding = 1) uniform sampler2D metalnessRoughnessTexture;
 
 float DistributionGGX(vec3 N, vec3 H, float roughness);
 float GeometrySchlickGGX(float NdotV, float roughness);
@@ -39,19 +49,7 @@ void main()
     vec3 F0 = vec3(0.04);
     F0 = mix(F0, albedo, metalness);
 
-    vec3 lightPositions[] = {
-        vec3(-6.f, -5.f, 0.0f),
-        vec3(-5.f, -3.f, 0.f),
-        vec3(-4.f, -5.f, -0.f),
-        vec3(-3.f, -3.f, -0.f),
-        vec3(-1.f, -5.f, -0.f),
-        vec3(1.f, -3.f, 0.f),
-        vec3(3.f, -5.f, 0.f),
-        vec3(0.f, -2.5f, 0.5f),
-        vec3(5.5f, -3.f, 0.5f),
-    vec3(2.157111, -0.254994, -0.576244)
 
-    };
     vec3 lightColor = vec3(1.0f);
 
     // reflectance equation
@@ -82,10 +80,13 @@ void main()
 
     for (int i = 0; i < N_LIGHTS; ++i)
     {
+        vec3 lightPosition = lightBuffer.lights[i].position.xyz;
+        vec3 lightColor = lightBuffer.lights[i].color.rgb;
+
         // calculate per-light radiance
-        vec3 L = normalize(lightPositions[i] - inWorldPos);
+        vec3 L = normalize(lightPosition - inWorldPos);
         vec3 H = normalize(V + L);
-        float distance    = length(lightPositions[i] - inWorldPos);
+        float distance    = length(lightPosition - inWorldPos);
         float attenuation = 1.0 / (distance * distance) * 10;
         vec3 radiance     = lightColor * attenuation;
 

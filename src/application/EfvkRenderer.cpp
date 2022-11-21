@@ -51,6 +51,14 @@ struct GpuObjectData
 {
     glm::mat4 modelTransform;
 };
+
+struct GpuLightData
+{
+    glm::vec4 position;
+    glm::vec4 color;
+};
+
+static constexpr uint32_t kNumLights = 10;
 }  // namespace
 
 EfvkRenderer::EfvkRenderer() : Application("Efvk Rendering Engine") {}
@@ -163,7 +171,8 @@ void EfvkRenderer::createDescriptors()
 
     vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &mDescriptorPool);
 
-    // Creating the camera info buffer, aka the global descriptor set
+    // Creating the global descriptor set, which contains camera info as well as all the object
+    // transforms
     VkDescriptorSetLayoutBinding cameraBufferBinding = init::descriptorSetLayoutBinding(
         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
     VkDescriptorSetLayoutBinding objectBufferBinding = init::descriptorSetLayoutBinding(
@@ -172,17 +181,34 @@ void EfvkRenderer::createDescriptors()
     std::array<VkDescriptorSetLayoutBinding, 2> layoutBindings = {cameraBufferBinding,
                                                                   objectBufferBinding};
 
-    VkDescriptorSetLayoutCreateInfo layoutCreateInfo{};
-    layoutCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutCreateInfo.pNext        = nullptr;
-    layoutCreateInfo.bindingCount = layoutBindings.size();
-    layoutCreateInfo.flags        = 0;
-    layoutCreateInfo.pBindings    = layoutBindings.data();
+    VkDescriptorSetLayoutCreateInfo globalCreateInfo{};
+    globalCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    globalCreateInfo.pNext        = nullptr;
+    globalCreateInfo.bindingCount = layoutBindings.size();
+    globalCreateInfo.flags        = 0;
+    globalCreateInfo.pBindings    = layoutBindings.data();
 
-    if (vkCreateDescriptorSetLayout(mDevice, &layoutCreateInfo, nullptr, &mGlobalSetLayout) !=
+    if (vkCreateDescriptorSetLayout(mDevice, &globalCreateInfo, nullptr, &mGlobalSetLayout) !=
         VK_SUCCESS)
     {
         throw std::runtime_error("Unable to create global descriptor set layout");
+    }
+
+    // Creating the clustering info descriptor set layout, which is used for clustered rendering
+    VkDescriptorSetLayoutBinding lightBufferBinding = init::descriptorSetLayoutBinding(
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+
+    VkDescriptorSetLayoutCreateInfo clusterCreateInfo{};
+    clusterCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    clusterCreateInfo.pNext        = nullptr;
+    clusterCreateInfo.bindingCount = 1;
+    clusterCreateInfo.pBindings    = &lightBufferBinding;
+    clusterCreateInfo.flags        = 0;
+
+    if (vkCreateDescriptorSetLayout(mDevice, &clusterCreateInfo, nullptr, &mClusteringSetLayout) !=
+        VK_SUCCESS)
+    {
+        throw std::runtime_error("Unable to create clustering descriptor set layout");
     }
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
@@ -223,9 +249,29 @@ void EfvkRenderer::createDescriptors()
         VkWriteDescriptorSet objSetWrite = init::writeDescriptorBuffer(
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, mFrames[i].globalDescriptor, &objBufferInfo, 1);
 
-        std::array<VkWriteDescriptorSet, 2> writes = {
+        // Allocate the clustering info descriptor set
+        allocInfo.pSetLayouts = &mClusteringSetLayout;
+        vkAllocateDescriptorSets(mDevice, &allocInfo, &mFrames[i].clusteringDescriptor);
+
+        // Allocate the light buffer
+        mFrames[i].lightBuffer =
+            createBuffer(sizeof(GpuLightData) * kNumLights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                         VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+        // Write the light buffer info
+        VkDescriptorBufferInfo lightBufferInfo{};
+        lightBufferInfo.buffer = mFrames[i].lightBuffer.buffer;
+        lightBufferInfo.offset = 0;
+        lightBufferInfo.range  = sizeof(GpuLightData) * kNumLights;
+
+        VkWriteDescriptorSet lightSetWrite =
+            init::writeDescriptorBuffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                        mFrames[i].clusteringDescriptor, &lightBufferInfo, 0);
+
+        std::array<VkWriteDescriptorSet, 3> writes = {
             cameraSetWrite,
             objSetWrite,
+            lightSetWrite,
         };
 
         vkUpdateDescriptorSets(mDevice, writes.size(), writes.data(), 0, nullptr);
@@ -250,6 +296,7 @@ void EfvkRenderer::createDescriptors()
     mDeleters.emplace_back([this]() {
         vkDestroyDescriptorSetLayout(mDevice, mGlobalSetLayout, nullptr);
         vkDestroyDescriptorSetLayout(mDevice, mTextureSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(mDevice, mClusteringSetLayout, nullptr);
         vkDestroyDescriptorPool(mDevice, mDescriptorPool, nullptr);
 
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
@@ -258,6 +305,8 @@ void EfvkRenderer::createDescriptors()
                              mFrames[i].objectBuffer.allocation);
             vmaDestroyBuffer(mAllocator, mFrames[i].cameraBuffer.buffer,
                              mFrames[i].cameraBuffer.allocation);
+            vmaDestroyBuffer(mAllocator, mFrames[i].lightBuffer.buffer,
+                             mFrames[i].lightBuffer.allocation);
         }
     });
 }
@@ -334,15 +383,11 @@ void EfvkRenderer::createGraphicsPipeline()
     colorBlending.attachmentCount = 1;
     colorBlending.pAttachments    = &colorBlendAttachment;
 
-    VkPushConstantRange pushConstant;
-    pushConstant.offset     = 0;
-    pushConstant.size       = sizeof(MeshPushConstants);
-    pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = init::pipelineLayoutInfo();
-    pipelineLayoutCreateInfo.pushConstantRangeCount     = 1;
-    pipelineLayoutCreateInfo.pPushConstantRanges        = &pushConstant;
-    std::array<VkDescriptorSetLayout, 2> layouts        = {mGlobalSetLayout, mTextureSetLayout};
+    pipelineLayoutCreateInfo.pushConstantRangeCount     = 0;
+    pipelineLayoutCreateInfo.pPushConstantRanges        = nullptr;
+    std::array<VkDescriptorSetLayout, 3> layouts        = {mGlobalSetLayout, mClusteringSetLayout,
+                                                           mTextureSetLayout};
     pipelineLayoutCreateInfo.setLayoutCount             = layouts.size();
     pipelineLayoutCreateInfo.pSetLayouts                = layouts.data();
 
@@ -895,6 +940,11 @@ void EfvkRenderer::createScene()
             vkDestroyImageView(mDevice, texture.imageView, nullptr);
         }
     });
+    mPointLights = {{glm::vec3(-6.f, -5.f, 0.0f)}, {glm::vec3(-5.f, -3.f, 0.f)},
+                    {glm::vec3(-4.f, -5.f, -0.f)}, {glm::vec3(-3.f, -3.f, -0.f)},
+                    {glm::vec3(-1.f, -5.f, -0.f)}, {glm::vec3(1.f, -3.f, 0.f)},
+                    {glm::vec3(3.f, -5.f, 0.f)},   {glm::vec3(0.f, -2.5f, 0.5f)},
+                    {glm::vec3(5.5f, -3.f, 0.5f)}, {glm::vec3(2.157111, -0.254994, -0.576244)}};
 }
 
 void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
@@ -911,11 +961,13 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
     cameraData.viewproj = viewproj;
     cameraData.position = mCamera.Position;
 
+    // Writing camera data
     void *data;
     vmaMapMemory(mAllocator, mFrames[mCurrentFrameIndex].cameraBuffer.allocation, &data);
     std::memcpy(data, &cameraData, sizeof(GpuCameraData));
     vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].cameraBuffer.allocation);
 
+    // Writing all of the object transforms
     vmaMapMemory(mAllocator, mFrames[mCurrentFrameIndex].objectBuffer.allocation, &data);
     auto objectData = static_cast<GpuObjectData *>(data);
     for (size_t i = 0; i < mRenderables.size(); ++i)
@@ -924,17 +976,25 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
     }
     vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].objectBuffer.allocation);
 
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 0, 1,
-                            &mFrames[mCurrentFrameIndex].globalDescriptor, 0, nullptr);
+    // Writing the lights to the light buffer
+    vmaMapMemory(mAllocator, mFrames[mCurrentFrameIndex].lightBuffer.allocation, &data);
+    auto lightBufferData = static_cast<GpuLightData *>(data);
+    for (size_t i = 0; i < kNumLights; ++i)
+    {
+        lightBufferData[i].position = glm::vec4(mPointLights[i].position, 0.f);
+        lightBufferData[i].color    = glm::vec4(mPointLights[i].color, 0.f);
+    }
+    vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].lightBuffer.allocation);
+
+    std::array<VkDescriptorSet, 2> descriptorSets = {
+        mFrames[mCurrentFrameIndex].globalDescriptor,
+        mFrames[mCurrentFrameIndex].clusteringDescriptor};
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 0,
+                            descriptorSets.size(), descriptorSets.data(), 0, nullptr);
 
     for (const auto &object : mRenderables)
     {
         ZoneScopedC(tracy::Color::AntiqueWhite);
-        MeshPushConstants constants;
-        constants.renderMatrix = object.transform;
-
-        vkCmdPushConstants(commandBuffer, mPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                           sizeof(MeshPushConstants), &constants);
 
         for (auto &mesh : object.model->meshes)
         {
@@ -950,7 +1010,7 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
             vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout,
-                                    1, 1, &mesh.descriptor, 0, nullptr);
+                                    2, 1, &mesh.descriptor, 0, nullptr);
 
             vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
         }

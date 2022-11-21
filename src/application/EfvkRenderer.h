@@ -6,6 +6,8 @@
 #include "geometry/Model.h"
 #include "scene/Camera.h"
 
+#include <glm/glm.hpp>
+
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -48,12 +50,6 @@ class EfvkRenderer : public Application
     void uploadMesh(Mesh &mesh);
     void uploadTextures(Mesh &mesh);
 
-    struct RenderObject
-    {
-        std::shared_ptr<Model> model;
-        glm::mat4 transform;
-    };
-
     struct UploadContext
     {
         VkFence uploadFence;
@@ -74,6 +70,7 @@ class EfvkRenderer : public Application
     VkFormat mDepthFormat;
 
     VkDescriptorSetLayout mGlobalSetLayout;
+    VkDescriptorSetLayout mClusteringSetLayout;
     VkDescriptorSetLayout mTextureSetLayout;
 
     VkDescriptorPool mDescriptorPool;
@@ -83,10 +80,25 @@ class EfvkRenderer : public Application
         VkDescriptorSet globalDescriptor;
         AllocatedBuffer cameraBuffer;
         AllocatedBuffer objectBuffer;
+
+        VkDescriptorSet clusteringDescriptor;
+        AllocatedBuffer lightBuffer;
     };
     std::array<FrameData, kMaxFramesInFlight> mFrames;
 
+    struct RenderObject
+    {
+        std::shared_ptr<Model> model;
+        glm::mat4 transform;
+    };
     std::vector<RenderObject> mRenderables;
+    struct PointLight
+    {
+        glm::vec3 position;
+        glm::vec3 color = glm::vec3(1.f);
+    };
+    std::vector<PointLight> mPointLights;
+
     TextureManager mTextureManager;
     struct GpuTexture
     {
