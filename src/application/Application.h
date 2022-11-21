@@ -80,7 +80,7 @@ class Application
     };
     std::array<FrameData, kMaxFramesInFlight> mFrames{};
     uint32_t mCurrentFrameIndex{0};
-    FrameData *mCurrentFrame = &mFrames.front();
+    FrameData *mCurrentApplicationFrame = &mFrames.front();
 
     VkQueue mGraphicsQueue;
     uint32_t mGraphicsQueueIndex;

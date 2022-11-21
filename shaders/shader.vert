@@ -1,4 +1,4 @@
-#version 450
+#version 460
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
@@ -16,15 +16,22 @@ layout (set = 0, binding = 0) uniform CameraBuffer{
     vec3 position;
 } cameraData;
 
-layout ( push_constant ) uniform constants
+struct ObjectData
 {
-    mat4 renderMatrix;
-} PushConstants;
+    mat4 modelTransform;
+};
+
+layout (std140, set = 0, binding = 1) readonly buffer ObjectBuffer {
+    ObjectData objects[];
+} objectBuffer;
 
 void main() {
-    outWorldPos = vec3(PushConstants.renderMatrix * vec4(inPosition, 1.0));
-    mat4 transformMatrix = cameraData.viewproj * PushConstants.renderMatrix;
+    mat4 modelTransform = objectBuffer.objects[gl_BaseInstance].modelTransform;
+    mat4 transformMatrix = cameraData.viewproj * modelTransform;
+
     gl_Position = transformMatrix * vec4(inPosition, 1.0);
+
+    outWorldPos = vec3(modelTransform * vec4(inPosition, 1.0));
     outTexCoord = inTexCoord;
     outNormal = inNormal;
     outCameraPos = cameraData.position;

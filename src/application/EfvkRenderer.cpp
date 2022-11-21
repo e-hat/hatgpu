@@ -46,6 +46,11 @@ struct GpuCameraData
     glm::mat4 viewproj;
     glm::vec3 position;
 };
+
+struct GpuObjectData
+{
+    glm::mat4 modelTransform;
+};
 }  // namespace
 
 EfvkRenderer::EfvkRenderer() : Application("Efvk Rendering Engine") {}
@@ -78,7 +83,7 @@ void EfvkRenderer::Exit() {}
 
 void EfvkRenderer::OnRender()
 {
-    recordCommandBuffer(mCurrentFrame->commandBuffer, mCurrentImageIndex);
+    recordCommandBuffer(mCurrentApplicationFrame->commandBuffer, mCurrentImageIndex);
     ++mFrameCount;
 }
 void EfvkRenderer::OnImGuiRender() {}
@@ -145,13 +150,14 @@ void EfvkRenderer::createDepthImage()
 void EfvkRenderer::createDescriptors()
 {
     std::vector<VkDescriptorPoolSize> sizes = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
-                                               {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 190}};
+                                               {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 190},
+                                               {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10}};
 
     // Creating the descriptor pool
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.flags         = 0;
-    poolInfo.maxSets       = 200;
+    poolInfo.maxSets       = 300;
     poolInfo.poolSizeCount = static_cast<uint32_t>(sizes.size());
     poolInfo.pPoolSizes    = sizes.data();
 
@@ -160,24 +166,36 @@ void EfvkRenderer::createDescriptors()
     // Creating the camera info buffer, aka the global descriptor set
     VkDescriptorSetLayoutBinding cameraBufferBinding = init::descriptorSetLayoutBinding(
         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+    VkDescriptorSetLayoutBinding objectBufferBinding = init::descriptorSetLayoutBinding(
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 1);
+
+    std::array<VkDescriptorSetLayoutBinding, 2> layoutBindings = {cameraBufferBinding,
+                                                                  objectBufferBinding};
 
     VkDescriptorSetLayoutCreateInfo layoutCreateInfo{};
     layoutCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutCreateInfo.pNext        = nullptr;
-    layoutCreateInfo.bindingCount = 1;
+    layoutCreateInfo.bindingCount = layoutBindings.size();
     layoutCreateInfo.flags        = 0;
-    layoutCreateInfo.pBindings    = &cameraBufferBinding;
+    layoutCreateInfo.pBindings    = layoutBindings.data();
 
-    vkCreateDescriptorSetLayout(mDevice, &layoutCreateInfo, nullptr, &mGlobalSetLayout);
-
-    mCameraBuffers.resize(kMaxFramesInFlight);
-    mGlobalDescriptors.resize(kMaxFramesInFlight);
+    if (vkCreateDescriptorSetLayout(mDevice, &layoutCreateInfo, nullptr, &mGlobalSetLayout) !=
+        VK_SUCCESS)
+    {
+        throw std::runtime_error("Unable to create global descriptor set layout");
+    }
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
-        mCameraBuffers[i] = createBuffer(sizeof(GpuCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                         VMA_MEMORY_USAGE_CPU_TO_GPU);
+        constexpr int kMaxObjects = 10000;
+        mFrames[i].objectBuffer =
+            createBuffer(sizeof(GpuObjectData) * kMaxObjects, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                         VMA_MEMORY_USAGE_CPU_TO_GPU);
 
+        mFrames[i].cameraBuffer = createBuffer(
+            sizeof(GpuCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+        // Create this descriptor set
         VkDescriptorSetAllocateInfo allocInfo{};
         allocInfo.pNext              = nullptr;
         allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -185,16 +203,32 @@ void EfvkRenderer::createDescriptors()
         allocInfo.descriptorSetCount = 1;
         allocInfo.pSetLayouts        = &mGlobalSetLayout;
 
-        vkAllocateDescriptorSets(mDevice, &allocInfo, &mGlobalDescriptors[i]);
+        vkAllocateDescriptorSets(mDevice, &allocInfo, &mFrames[i].globalDescriptor);
 
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = mCameraBuffers[i].buffer;
-        bufferInfo.offset = 0;
-        bufferInfo.range  = sizeof(GpuCameraData);
+        // Use GpuCameraData for the first binding
+        VkDescriptorBufferInfo cameraBufferInfo{};
+        cameraBufferInfo.buffer = mFrames[i].cameraBuffer.buffer;
+        cameraBufferInfo.offset = 0;
+        cameraBufferInfo.range  = sizeof(GpuCameraData);
 
-        VkWriteDescriptorSet setWrite = init::writeDescriptorBuffer(
-            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, mGlobalDescriptors[i], &bufferInfo, 0);
-        vkUpdateDescriptorSets(mDevice, 1, &setWrite, 0, nullptr);
+        VkWriteDescriptorSet cameraSetWrite = init::writeDescriptorBuffer(
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, mFrames[i].globalDescriptor, &cameraBufferInfo, 0);
+
+        // Use GpuObjectData for the second binding, which is an SSBO
+        VkDescriptorBufferInfo objBufferInfo{};
+        objBufferInfo.buffer = mFrames[i].objectBuffer.buffer;
+        objBufferInfo.offset = 0;
+        objBufferInfo.range  = sizeof(GpuObjectData) * kMaxObjects;
+
+        VkWriteDescriptorSet objSetWrite = init::writeDescriptorBuffer(
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, mFrames[i].globalDescriptor, &objBufferInfo, 1);
+
+        std::array<VkWriteDescriptorSet, 2> writes = {
+            cameraSetWrite,
+            objSetWrite,
+        };
+
+        vkUpdateDescriptorSets(mDevice, writes.size(), writes.data(), 0, nullptr);
     }
 
     VkDescriptorSetLayoutBinding albedoBinding = init::descriptorSetLayoutBinding(
@@ -220,7 +254,10 @@ void EfvkRenderer::createDescriptors()
 
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
-            vmaDestroyBuffer(mAllocator, mCameraBuffers[i].buffer, mCameraBuffers[i].allocation);
+            vmaDestroyBuffer(mAllocator, mFrames[i].objectBuffer.buffer,
+                             mFrames[i].objectBuffer.allocation);
+            vmaDestroyBuffer(mAllocator, mFrames[i].cameraBuffer.buffer,
+                             mFrames[i].cameraBuffer.allocation);
         }
     });
 }
@@ -862,8 +899,8 @@ void EfvkRenderer::createScene()
 
 void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 {
-    TracyVkZoneC(mCurrentFrame->tracyContext, mCurrentFrame->commandBuffer, "drawObjects",
-                 tracy::Color::Blue);
+    TracyVkZoneC(mCurrentApplicationFrame->tracyContext, mCurrentApplicationFrame->commandBuffer,
+                 "drawObjects", tracy::Color::Blue);
     const glm::mat4 view     = mCamera.GetViewMatrix();
     const glm::mat4 proj     = mCamera.GetProjectionMatrix();
     const glm::mat4 viewproj = proj * view;
@@ -875,12 +912,20 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
     cameraData.position = mCamera.Position;
 
     void *data;
-    vmaMapMemory(mAllocator, mCameraBuffers[mCurrentFrameIndex].allocation, &data);
+    vmaMapMemory(mAllocator, mFrames[mCurrentFrameIndex].cameraBuffer.allocation, &data);
     std::memcpy(data, &cameraData, sizeof(GpuCameraData));
-    vmaUnmapMemory(mAllocator, mCameraBuffers[mCurrentFrameIndex].allocation);
+    vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].cameraBuffer.allocation);
+
+    vmaMapMemory(mAllocator, mFrames[mCurrentFrameIndex].objectBuffer.allocation, &data);
+    auto objectData = static_cast<GpuObjectData *>(data);
+    for (size_t i = 0; i < mRenderables.size(); ++i)
+    {
+        objectData[i].modelTransform = mRenderables[i].transform;
+    }
+    vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].objectBuffer.allocation);
 
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 0, 1,
-                            &mGlobalDescriptors[mCurrentFrameIndex], 0, nullptr);
+                            &mFrames[mCurrentFrameIndex].globalDescriptor, 0, nullptr);
 
     for (const auto &object : mRenderables)
     {
@@ -894,8 +939,8 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
         for (auto &mesh : object.model->meshes)
         {
             ZoneScopedC(tracy::Color::DodgerBlue);
-            TracyVkZoneC(mCurrentFrame->tracyContext, mCurrentFrame->commandBuffer, "Mesh Draw",
-                         tracy::Color::Red);
+            TracyVkZoneC(mCurrentApplicationFrame->tracyContext,
+                         mCurrentApplicationFrame->commandBuffer, "Mesh Draw", tracy::Color::Red);
             if (!mesh.textures.contains(TextureType::ALBEDO) ||
                 !mesh.textures.contains(TextureType::METALLIC_ROUGHNESS))
                 continue;

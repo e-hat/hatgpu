@@ -315,14 +315,15 @@ void Application::Run()
         ZoneScopedC(tracy::Color::Aqua);
         {
             ZoneScopedNC("vkWaitForFences", tracy::Color::Linen);
-            vkWaitForFences(mDevice, 1, &mCurrentFrame->inFlightFence, VK_TRUE,
+            vkWaitForFences(mDevice, 1, &mCurrentApplicationFrame->inFlightFence, VK_TRUE,
                             std::numeric_limits<uint64_t>::max());
         }
         {
             ZoneScopedNC("vkAcquireNextImageKHR", tracy::Color::Orchid);
-            VkResult nextImageResult = vkAcquireNextImageKHR(
-                mDevice, mSwapchain, std::numeric_limits<uint64_t>::max(),
-                mCurrentFrame->imageAvailableSemaphore, VK_NULL_HANDLE, &mCurrentImageIndex);
+            VkResult nextImageResult =
+                vkAcquireNextImageKHR(mDevice, mSwapchain, std::numeric_limits<uint64_t>::max(),
+                                      mCurrentApplicationFrame->imageAvailableSemaphore,
+                                      VK_NULL_HANDLE, &mCurrentImageIndex);
             if (nextImageResult == VK_ERROR_OUT_OF_DATE_KHR)
             {
                 recreateSwapchain();
@@ -333,41 +334,45 @@ void Application::Run()
                 throw std::runtime_error("Failed to acquire swapchain image");
             }
         }
-        vkResetFences(mDevice, 1, &mCurrentFrame->inFlightFence);
-        vkResetCommandBuffer(mCurrentFrame->commandBuffer, 0);
+        vkResetFences(mDevice, 1, &mCurrentApplicationFrame->inFlightFence);
+        vkResetCommandBuffer(mCurrentApplicationFrame->commandBuffer, 0);
 
         VkCommandBufferBeginInfo beginInfo = init::commandBufferBeginInfo();
-        if (vkBeginCommandBuffer(mCurrentFrame->commandBuffer, &beginInfo) != VK_SUCCESS)
+        if (vkBeginCommandBuffer(mCurrentApplicationFrame->commandBuffer, &beginInfo) != VK_SUCCESS)
         {
             throw std::runtime_error("Failed to begin recording command buffer");
         }
 
         {
-            TracyVkZoneC(mCurrentFrame->tracyContext, mCurrentFrame->commandBuffer, "OnRender",
+            TracyVkZoneC(mCurrentApplicationFrame->tracyContext,
+                         mCurrentApplicationFrame->commandBuffer, "OnRender",
                          tracy::Color::MediumAquamarine);
 
             OnRender();
         }
 
-        TracyVkCollect(mCurrentFrame->tracyContext, mCurrentFrame->commandBuffer);
-        if (vkEndCommandBuffer(mCurrentFrame->commandBuffer) != VK_SUCCESS)
+        TracyVkCollect(mCurrentApplicationFrame->tracyContext,
+                       mCurrentApplicationFrame->commandBuffer);
+        if (vkEndCommandBuffer(mCurrentApplicationFrame->commandBuffer) != VK_SUCCESS)
         {
             throw std::runtime_error("Failed to end recording of command buffer");
         }
 
-        VkSubmitInfo submitInfo                   = init::submitInfo(&mCurrentFrame->commandBuffer);
-        std::array<VkSemaphore, 1> waitSemaphores = {mCurrentFrame->imageAvailableSemaphore};
+        VkSubmitInfo submitInfo = init::submitInfo(&mCurrentApplicationFrame->commandBuffer);
+        std::array<VkSemaphore, 1> waitSemaphores = {
+            mCurrentApplicationFrame->imageAvailableSemaphore};
         std::array<VkPipelineStageFlags, 1> waitStages = {
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
         submitInfo.waitSemaphoreCount               = waitSemaphores.size();
         submitInfo.pWaitSemaphores                  = waitSemaphores.data();
         submitInfo.pWaitDstStageMask                = waitStages.data();
-        std::array<VkSemaphore, 1> signalSemaphores = {mCurrentFrame->renderFinishedSemaphore};
-        submitInfo.signalSemaphoreCount             = signalSemaphores.size();
-        submitInfo.pSignalSemaphores                = signalSemaphores.data();
+        std::array<VkSemaphore, 1> signalSemaphores = {
+            mCurrentApplicationFrame->renderFinishedSemaphore};
+        submitInfo.signalSemaphoreCount = signalSemaphores.size();
+        submitInfo.pSignalSemaphores    = signalSemaphores.data();
 
-        if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mCurrentFrame->inFlightFence) !=
-            VK_SUCCESS)
+        if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo,
+                          mCurrentApplicationFrame->inFlightFence) != VK_SUCCESS)
         {
             throw std::runtime_error("Failed to submit draw command buffer");
         }
@@ -393,8 +398,8 @@ void Application::Run()
             throw std::runtime_error("Failed to present swapchain image");
         }
 
-        mCurrentFrameIndex = (1 + mCurrentFrameIndex) % kMaxFramesInFlight;
-        mCurrentFrame      = &mFrames[mCurrentFrameIndex];
+        mCurrentFrameIndex       = (1 + mCurrentFrameIndex) % kMaxFramesInFlight;
+        mCurrentApplicationFrame = &mFrames[mCurrentFrameIndex];
 
         OnImGuiRender();
 
@@ -419,7 +424,7 @@ void Application::createInstance()
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.pEngineName        = "efvk";
     appInfo.engineVersion      = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion         = VK_API_VERSION_1_0;
+    appInfo.apiVersion         = VK_API_VERSION_1_1;
 
     VkInstanceCreateInfo createInfo{};
     createInfo.sType            = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -602,6 +607,12 @@ void Application::createLogicalDevice()
 
     createInfo.enabledExtensionCount   = static_cast<uint32_t>(kDeviceExtensions.size());
     createInfo.ppEnabledExtensionNames = kDeviceExtensions.data();
+
+    VkPhysicalDeviceShaderDrawParametersFeatures shaderDrawFeatures;
+    shaderDrawFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES;
+    shaderDrawFeatures.pNext = nullptr;
+    shaderDrawFeatures.shaderDrawParameters = VK_TRUE;
+    createInfo.pNext                        = &shaderDrawFeatures;
 
     if constexpr (kEnableValidationLayers)
     {

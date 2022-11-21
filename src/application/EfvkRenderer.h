@@ -75,9 +75,16 @@ class EfvkRenderer : public Application
 
     VkDescriptorSetLayout mGlobalSetLayout;
     VkDescriptorSetLayout mTextureSetLayout;
+
     VkDescriptorPool mDescriptorPool;
-    std::vector<AllocatedBuffer> mCameraBuffers;
-    std::vector<VkDescriptorSet> mGlobalDescriptors;
+
+    struct FrameData
+    {
+        VkDescriptorSet globalDescriptor;
+        AllocatedBuffer cameraBuffer;
+        AllocatedBuffer objectBuffer;
+    };
+    std::array<FrameData, kMaxFramesInFlight> mFrames;
 
     std::vector<RenderObject> mRenderables;
     TextureManager mTextureManager;
