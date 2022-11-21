@@ -37,7 +37,8 @@ set(INCLUDES ${INCLUDES}
         ${DEPS}/glm
         ${DEPS}/imgui
         ${DEPS}/stb
-        ${DEPS}/VulkanMemoryAllocator/include)
+        ${DEPS}/VulkanMemoryAllocator/include
+        ${DEPS}/tracy/public)
 target_include_directories(efvk PRIVATE ${INCLUDES})
 
 add_subdirectory(deps/assimp)
@@ -55,6 +56,9 @@ target_link_libraries(efvk PRIVATE imgui)
 add_subdirectory(deps/VulkanMemoryAllocator)
 target_link_libraries(efvk PRIVATE VulkanMemoryAllocator)
 
+add_subdirectory(deps/tracy)
+target_link_libraries(efvk PUBLIC Tracy::TracyClient)
+
 find_package(Vulkan REQUIRED)
 target_link_libraries(efvk PRIVATE ${Vulkan_LIBRARIES})
 target_include_directories(efvk PRIVATE ${Vulkan_INCLUDE_DIRS})
@@ -62,5 +66,6 @@ target_include_directories(efvk PRIVATE ${Vulkan_INCLUDE_DIRS})
 target_precompile_headers(efvk PRIVATE ${SOURCE_DIR}/efpch.h)
 
 target_compile_definitions(efvk PRIVATE DEBUG)
+target_compile_definitions(efvk PUBLIC TRACY_ENABLE)
 
 target_compile_options(efvk PRIVATE -Werror -Wall -Wextra)
