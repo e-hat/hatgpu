@@ -3,6 +3,8 @@
 #include "application/Application.h"
 #include "initializers.h"
 
+#include <tracy/Tracy.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -221,7 +223,7 @@ VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities, GLFWwi
     }
 }
 
-VkSampleCountFlagBits getMaxSampleCount(VkPhysicalDevice device)
+[[maybe_unused]] VkSampleCountFlagBits getMaxSampleCount(VkPhysicalDevice device)
 {
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(device, &properties);
@@ -312,10 +314,12 @@ void Application::Run()
         OnRender();
 
         mCurrentFrameIndex = (1 + mCurrentFrameIndex) % kMaxFramesInFlight;
+        mCurrentFrame      = &mFrames[mCurrentFrameIndex];
 
         OnImGuiRender();
 
         glfwSwapBuffers(mWindow);
+        FrameMark;
     }
 
     vkDeviceWaitIdle(mDevice);
@@ -372,11 +376,6 @@ void Application::createInstance()
     std::vector<VkExtensionProperties> availableExtensions(availableExtensionCount);
     vkEnumerateInstanceExtensionProperties(nullptr, &availableExtensionCount,
                                            availableExtensions.data());
-    std::cout << "Available extensions:\n";
-    for (const auto &extension : availableExtensions)
-    {
-        std::cout << '\t' << extension.extensionName << '\n';
-    }
 }
 
 void Application::setupDebugMessenger()
@@ -482,7 +481,6 @@ void Application::pickPhysicalDevice()
         if (isDeviceSuitable(candidate, mSurface))
         {
             mPhysicalDevice = candidate;
-            mMaxSampleCount = getMaxSampleCount(mPhysicalDevice);
             break;
         }
     }
@@ -653,32 +651,34 @@ void Application::createCommandPool()
 
 void Application::createCommandBuffers()
 {
-    mCommandBuffers.resize(kMaxFramesInFlight);
+    std::array<VkCommandBuffer, kMaxFramesInFlight> commandBuffers{};
 
     VkCommandBufferAllocateInfo allocInfo =
-        init::commandBufferAllocInfo(mCommandPool, static_cast<uint32_t>(mCommandBuffers.size()));
-    if (vkAllocateCommandBuffers(mDevice, &allocInfo, mCommandBuffers.data()) != VK_SUCCESS)
+        init::commandBufferAllocInfo(mCommandPool, static_cast<uint32_t>(commandBuffers.size()));
+    if (vkAllocateCommandBuffers(mDevice, &allocInfo, commandBuffers.data()) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to allocate command buffer");
+    }
+
+    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+    {
+        mFrames[i].commandBuffer = commandBuffers[i];
     }
 }
 
 void Application::createSyncObjects()
 {
-    mImageAvailableSemaphores.resize(kMaxFramesInFlight);
-    mRenderFinishedSemaphores.resize(kMaxFramesInFlight);
-    mInFlightFences.resize(kMaxFramesInFlight);
-
     VkSemaphoreCreateInfo semaphoreCreateInfo = init::semaphoreInfo();
     VkFenceCreateInfo fenceCreateInfo         = init::fenceInfo(VK_FENCE_CREATE_SIGNALED_BIT);
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
         if (vkCreateSemaphore(mDevice, &semaphoreCreateInfo, nullptr,
-                              &mImageAvailableSemaphores[i]) != VK_SUCCESS ||
+                              &mFrames[i].imageAvailableSemaphore) != VK_SUCCESS ||
             vkCreateSemaphore(mDevice, &semaphoreCreateInfo, nullptr,
-                              &mRenderFinishedSemaphores[i]) != VK_SUCCESS ||
-            vkCreateFence(mDevice, &fenceCreateInfo, nullptr, &mInFlightFences[i]) != VK_SUCCESS)
+                              &mFrames[i].renderFinishedSemaphore) != VK_SUCCESS ||
+            vkCreateFence(mDevice, &fenceCreateInfo, nullptr, &mFrames[i].inFlightFence) !=
+                VK_SUCCESS)
         {
             throw std::runtime_error("Failed to create sync objects");
         }
@@ -687,9 +687,9 @@ void Application::createSyncObjects()
     mDeleters.emplace_back([this]() {
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
-            vkDestroySemaphore(mDevice, mImageAvailableSemaphores[i], nullptr);
-            vkDestroySemaphore(mDevice, mRenderFinishedSemaphores[i], nullptr);
-            vkDestroyFence(mDevice, mInFlightFences[i], nullptr);
+            vkDestroySemaphore(mDevice, mFrames[i].imageAvailableSemaphore, nullptr);
+            vkDestroySemaphore(mDevice, mFrames[i].renderFinishedSemaphore, nullptr);
+            vkDestroyFence(mDevice, mFrames[i].inFlightFence, nullptr);
         }
     });
 }

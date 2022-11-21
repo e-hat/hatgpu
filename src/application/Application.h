@@ -52,6 +52,8 @@ class Application
     VkSwapchainKHR mSwapchain;
     VkFormat mSwapchainImageFormat;
     VkExtent2D mSwapchainExtent;
+
+    uint32_t mCurrentImageIndex;
     std::vector<VkImage> mSwapchainImages;
     std::vector<VkFramebuffer> mSwapchainFramebuffers;
 
@@ -66,17 +68,22 @@ class Application
                                                 const VkSurfaceKHR &surface);
 
     VkCommandPool mCommandPool;
-    std::vector<VkCommandBuffer> mCommandBuffers;
+    struct FrameData
+    {
+        VkCommandBuffer commandBuffer;
+        VkSemaphore imageAvailableSemaphore;
+        VkSemaphore renderFinishedSemaphore;
+        VkFence inFlightFence;
+    };
+    std::array<FrameData, kMaxFramesInFlight> mFrames{};
+    uint32_t mCurrentFrameIndex{0};
+    FrameData *mCurrentFrame = &mFrames.front();
+
     VkQueue mGraphicsQueue;
     uint32_t mGraphicsQueueIndex;
     VkQueue mPresentQueue;
-    std::vector<VkSemaphore> mImageAvailableSemaphores;
-    std::vector<VkSemaphore> mRenderFinishedSemaphores;
-    std::vector<VkFence> mInFlightFences;
-    bool mFramebufferResized{false};
 
-    uint32_t mCurrentImageIndex;
-    uint32_t mCurrentFrameIndex{0};
+    bool mFramebufferResized{false};
 
     VkShaderModule createShaderModule(const std::vector<char> &code);
     void recreateSwapchain();

@@ -77,11 +77,11 @@ void EfvkRenderer::Exit() {}
 
 void EfvkRenderer::OnRender()
 {
-    vkWaitForFences(mDevice, 1, &mInFlightFences[mCurrentFrameIndex], VK_TRUE,
+    vkWaitForFences(mDevice, 1, &mCurrentFrame->inFlightFence, VK_TRUE,
                     std::numeric_limits<uint64_t>::max());
     VkResult nextImageResult = vkAcquireNextImageKHR(
         mDevice, mSwapchain, std::numeric_limits<uint64_t>::max(),
-        mImageAvailableSemaphores[mCurrentFrameIndex], VK_NULL_HANDLE, &mCurrentImageIndex);
+        mCurrentFrame->imageAvailableSemaphore, VK_NULL_HANDLE, &mCurrentImageIndex);
     if (nextImageResult == VK_ERROR_OUT_OF_DATE_KHR)
     {
         recreateSwapchain();
@@ -92,23 +92,22 @@ void EfvkRenderer::OnRender()
         throw std::runtime_error("Failed to acquire swapchain image");
     }
 
-    vkResetFences(mDevice, 1, &mInFlightFences[mCurrentFrameIndex]);
-    vkResetCommandBuffer(mCommandBuffers[mCurrentFrameIndex], 0);
-    recordCommandBuffer(mCommandBuffers[mCurrentFrameIndex], mCurrentImageIndex);
+    vkResetFences(mDevice, 1, &mCurrentFrame->inFlightFence);
+    vkResetCommandBuffer(mCurrentFrame->commandBuffer, 0);
+    recordCommandBuffer(mCurrentFrame->commandBuffer, mCurrentImageIndex);
 
-    VkSubmitInfo submitInfo = init::submitInfo(&mCommandBuffers[mCurrentFrameIndex]);
-    std::array<VkSemaphore, 1> waitSemaphores = {mImageAvailableSemaphores[mCurrentFrameIndex]};
+    VkSubmitInfo submitInfo                   = init::submitInfo(&mCurrentFrame->commandBuffer);
+    std::array<VkSemaphore, 1> waitSemaphores = {mCurrentFrame->imageAvailableSemaphore};
     std::array<VkPipelineStageFlags, 1> waitStages = {
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     submitInfo.waitSemaphoreCount               = waitSemaphores.size();
     submitInfo.pWaitSemaphores                  = waitSemaphores.data();
     submitInfo.pWaitDstStageMask                = waitStages.data();
-    std::array<VkSemaphore, 1> signalSemaphores = {mRenderFinishedSemaphores[mCurrentFrameIndex]};
+    std::array<VkSemaphore, 1> signalSemaphores = {mCurrentFrame->renderFinishedSemaphore};
     submitInfo.signalSemaphoreCount             = signalSemaphores.size();
     submitInfo.pSignalSemaphores                = signalSemaphores.data();
 
-    if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mInFlightFences[mCurrentFrameIndex]) !=
-        VK_SUCCESS)
+    if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mCurrentFrame->inFlightFence) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to submit draw command buffer");
     }
