@@ -78,63 +78,7 @@ void EfvkRenderer::Exit() {}
 
 void EfvkRenderer::OnRender()
 {
-    ZoneScopedC(tracy::Color::Aqua);
-    vkWaitForFences(mDevice, 1, &mCurrentFrame->inFlightFence, VK_TRUE,
-                    std::numeric_limits<uint64_t>::max());
-    VkResult nextImageResult = vkAcquireNextImageKHR(
-        mDevice, mSwapchain, std::numeric_limits<uint64_t>::max(),
-        mCurrentFrame->imageAvailableSemaphore, VK_NULL_HANDLE, &mCurrentImageIndex);
-    if (nextImageResult == VK_ERROR_OUT_OF_DATE_KHR)
-    {
-        recreateSwapchain();
-        return;
-    }
-    else if (nextImageResult != VK_SUCCESS && nextImageResult != VK_SUBOPTIMAL_KHR)
-    {
-        throw std::runtime_error("Failed to acquire swapchain image");
-    }
-
-    vkResetFences(mDevice, 1, &mCurrentFrame->inFlightFence);
-    vkResetCommandBuffer(mCurrentFrame->commandBuffer, 0);
     recordCommandBuffer(mCurrentFrame->commandBuffer, mCurrentImageIndex);
-
-    VkSubmitInfo submitInfo                   = init::submitInfo(&mCurrentFrame->commandBuffer);
-    std::array<VkSemaphore, 1> waitSemaphores = {mCurrentFrame->imageAvailableSemaphore};
-    std::array<VkPipelineStageFlags, 1> waitStages = {
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    submitInfo.waitSemaphoreCount               = waitSemaphores.size();
-    submitInfo.pWaitSemaphores                  = waitSemaphores.data();
-    submitInfo.pWaitDstStageMask                = waitStages.data();
-    std::array<VkSemaphore, 1> signalSemaphores = {mCurrentFrame->renderFinishedSemaphore};
-    submitInfo.signalSemaphoreCount             = signalSemaphores.size();
-    submitInfo.pSignalSemaphores                = signalSemaphores.data();
-
-    if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mCurrentFrame->inFlightFence) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to submit draw command buffer");
-    }
-
-    VkPresentInfoKHR presentInfo             = init::presentInfo();
-    presentInfo.waitSemaphoreCount           = 1;
-    presentInfo.pWaitSemaphores              = signalSemaphores.data();
-    std::array<VkSwapchainKHR, 1> swapchains = {mSwapchain};
-    presentInfo.swapchainCount               = 1;
-    presentInfo.pSwapchains                  = swapchains.data();
-    presentInfo.pImageIndices                = &mCurrentImageIndex;
-
-    VkResult presentResult = vkQueuePresentKHR(mPresentQueue, &presentInfo);
-
-    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR ||
-        mFramebufferResized)
-    {
-        SetFramebufferResized(false);
-        recreateSwapchain();
-    }
-    else if (presentResult != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to present swapchain image");
-    }
-
     ++mFrameCount;
 }
 void EfvkRenderer::OnImGuiRender() {}
@@ -918,6 +862,8 @@ void EfvkRenderer::createScene()
 
 void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 {
+    TracyVkZoneC(mCurrentFrame->tracyContext, mCurrentFrame->commandBuffer, "drawObjects",
+                 tracy::Color::Blue);
     const glm::mat4 view     = mCamera.GetViewMatrix();
     const glm::mat4 proj     = mCamera.GetProjectionMatrix();
     const glm::mat4 viewproj = proj * view;
@@ -948,6 +894,8 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
         for (auto &mesh : object.model->meshes)
         {
             ZoneScopedC(tracy::Color::DodgerBlue);
+            TracyVkZoneC(mCurrentFrame->tracyContext, mCurrentFrame->commandBuffer, "Mesh Draw",
+                         tracy::Color::Red);
             if (!mesh.textures.contains(TextureType::ALBEDO) ||
                 !mesh.textures.contains(TextureType::METALLIC_ROUGHNESS))
                 continue;
@@ -967,11 +915,6 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 void EfvkRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex)
 {
     ZoneScopedC(tracy::Color::PeachPuff);
-    VkCommandBufferBeginInfo beginInfo = init::commandBufferBeginInfo();
-    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to begin recording command buffer");
-    }
 
     VkRenderPassBeginInfo renderPassInfo = init::renderPassBeginInfo(
         mRenderPass, mSwapchainExtent, mSwapchainFramebuffers[imageIndex]);
@@ -1004,11 +947,6 @@ void EfvkRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer, uin
     drawObjects(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
-
-    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to end recording of command buffer");
-    }
 }
 
 EfvkRenderer::~EfvkRenderer()

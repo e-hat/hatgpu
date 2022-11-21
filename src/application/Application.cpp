@@ -4,6 +4,7 @@
 #include "initializers.h"
 
 #include <tracy/Tracy.hpp>
+#include <tracy/TracyVulkan.hpp>
 
 #include <algorithm>
 #include <array>
@@ -301,6 +302,7 @@ void Application::initVulkan()
     createSyncObjects();
     createCommandPool();
     createCommandBuffers();
+    createTracyContexts();
 }
 
 void Application::Run()
@@ -310,8 +312,86 @@ void Application::Run()
     while (!glfwWindowShouldClose(mWindow))
     {
         mInputManager.ProcessInput(mWindow, mTime.GetDeltaTime());
+        ZoneScopedC(tracy::Color::Aqua);
+        {
+            ZoneScopedNC("vkWaitForFences", tracy::Color::Linen);
+            vkWaitForFences(mDevice, 1, &mCurrentFrame->inFlightFence, VK_TRUE,
+                            std::numeric_limits<uint64_t>::max());
+        }
+        {
+            ZoneScopedNC("vkAcquireNextImageKHR", tracy::Color::Orchid);
+            VkResult nextImageResult = vkAcquireNextImageKHR(
+                mDevice, mSwapchain, std::numeric_limits<uint64_t>::max(),
+                mCurrentFrame->imageAvailableSemaphore, VK_NULL_HANDLE, &mCurrentImageIndex);
+            if (nextImageResult == VK_ERROR_OUT_OF_DATE_KHR)
+            {
+                recreateSwapchain();
+                return;
+            }
+            else if (nextImageResult != VK_SUCCESS && nextImageResult != VK_SUBOPTIMAL_KHR)
+            {
+                throw std::runtime_error("Failed to acquire swapchain image");
+            }
+        }
+        vkResetFences(mDevice, 1, &mCurrentFrame->inFlightFence);
+        vkResetCommandBuffer(mCurrentFrame->commandBuffer, 0);
 
-        OnRender();
+        VkCommandBufferBeginInfo beginInfo = init::commandBufferBeginInfo();
+        if (vkBeginCommandBuffer(mCurrentFrame->commandBuffer, &beginInfo) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to begin recording command buffer");
+        }
+
+        {
+            TracyVkZoneC(mCurrentFrame->tracyContext, mCurrentFrame->commandBuffer, "OnRender",
+                         tracy::Color::MediumAquamarine);
+
+            OnRender();
+        }
+
+        TracyVkCollect(mCurrentFrame->tracyContext, mCurrentFrame->commandBuffer);
+        if (vkEndCommandBuffer(mCurrentFrame->commandBuffer) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to end recording of command buffer");
+        }
+
+        VkSubmitInfo submitInfo                   = init::submitInfo(&mCurrentFrame->commandBuffer);
+        std::array<VkSemaphore, 1> waitSemaphores = {mCurrentFrame->imageAvailableSemaphore};
+        std::array<VkPipelineStageFlags, 1> waitStages = {
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+        submitInfo.waitSemaphoreCount               = waitSemaphores.size();
+        submitInfo.pWaitSemaphores                  = waitSemaphores.data();
+        submitInfo.pWaitDstStageMask                = waitStages.data();
+        std::array<VkSemaphore, 1> signalSemaphores = {mCurrentFrame->renderFinishedSemaphore};
+        submitInfo.signalSemaphoreCount             = signalSemaphores.size();
+        submitInfo.pSignalSemaphores                = signalSemaphores.data();
+
+        if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mCurrentFrame->inFlightFence) !=
+            VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to submit draw command buffer");
+        }
+
+        VkPresentInfoKHR presentInfo             = init::presentInfo();
+        presentInfo.waitSemaphoreCount           = 1;
+        presentInfo.pWaitSemaphores              = signalSemaphores.data();
+        std::array<VkSwapchainKHR, 1> swapchains = {mSwapchain};
+        presentInfo.swapchainCount               = 1;
+        presentInfo.pSwapchains                  = swapchains.data();
+        presentInfo.pImageIndices                = &mCurrentImageIndex;
+
+        VkResult presentResult = vkQueuePresentKHR(mPresentQueue, &presentInfo);
+
+        if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR ||
+            mFramebufferResized)
+        {
+            SetFramebufferResized(false);
+            recreateSwapchain();
+        }
+        else if (presentResult != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to present swapchain image");
+        }
 
         mCurrentFrameIndex = (1 + mCurrentFrameIndex) % kMaxFramesInFlight;
         mCurrentFrame      = &mFrames[mCurrentFrameIndex];
@@ -664,6 +744,22 @@ void Application::createCommandBuffers()
     {
         mFrames[i].commandBuffer = commandBuffers[i];
     }
+}
+
+void Application::createTracyContexts()
+{
+    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+    {
+        mFrames[i].tracyContext =
+            TracyVkContext(mPhysicalDevice, mDevice, mGraphicsQueue, mFrames[i].commandBuffer);
+    }
+
+    mDeleters.emplace_back([this]() {
+        for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+        {
+            TracyVkDestroy(mFrames[i].tracyContext);
+        }
+    });
 }
 
 void Application::createSyncObjects()

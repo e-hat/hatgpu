@@ -5,6 +5,8 @@
 #include "application/InputManager.h"
 #include "util/Time.h"
 
+#include <tracy/TracyVulkan.hpp>
+
 #include <deque>
 #include <functional>
 #include <optional>
@@ -74,6 +76,7 @@ class Application
         VkSemaphore imageAvailableSemaphore;
         VkSemaphore renderFinishedSemaphore;
         VkFence inFlightFence;
+        TracyVkCtx tracyContext;
     };
     std::array<FrameData, kMaxFramesInFlight> mFrames{};
     uint32_t mCurrentFrameIndex{0};
@@ -106,6 +109,7 @@ class Application
     void createSyncObjects();
     void createCommandPool();
     void createCommandBuffers();
+    void createTracyContexts();
     std::deque<Deleter> mDeleters;
 };
 }  // namespace efvk
