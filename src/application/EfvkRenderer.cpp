@@ -4,6 +4,7 @@
 #include "initializers.h"
 
 #include <glm/gtx/string_cast.hpp>
+#include <tracy/Tracy.hpp>
 
 #include <array>
 #include <cstring>
@@ -77,6 +78,7 @@ void EfvkRenderer::Exit() {}
 
 void EfvkRenderer::OnRender()
 {
+    ZoneScopedC(tracy::Color::Aqua);
     vkWaitForFences(mDevice, 1, &mCurrentFrame->inFlightFence, VK_TRUE,
                     std::numeric_limits<uint64_t>::max());
     VkResult nextImageResult = vkAcquireNextImageKHR(
@@ -936,6 +938,7 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 
     for (const auto &object : mRenderables)
     {
+        ZoneScopedC(tracy::Color::AntiqueWhite);
         MeshPushConstants constants;
         constants.renderMatrix = object.transform;
 
@@ -944,6 +947,7 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 
         for (auto &mesh : object.model->meshes)
         {
+            ZoneScopedC(tracy::Color::DodgerBlue);
             if (!mesh.textures.contains(TextureType::ALBEDO) ||
                 !mesh.textures.contains(TextureType::METALLIC_ROUGHNESS))
                 continue;
@@ -962,6 +966,7 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 
 void EfvkRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex)
 {
+    ZoneScopedC(tracy::Color::PeachPuff);
     VkCommandBufferBeginInfo beginInfo = init::commandBufferBeginInfo();
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
     {
