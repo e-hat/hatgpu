@@ -12,10 +12,43 @@ struct PointLight
     vec3 position;
     vec3 color;
 };
+// A big list of point lights in the scene
 layout (std140, set = 1, binding = 0) readonly buffer LightBuffer
 {
     PointLight lights[];
 } lightBuffer;
+
+layout (std140, set = 1, binding = 1) uniform ClusteringInfo
+{
+    mat4 projInverse;
+    vec2 screenDimensions;
+// defines view frustrum
+    float zFar;
+    float zNear;
+    float scale;
+    float bias;
+
+// describing 2D tile dimensions
+    uint tileSizeX;
+    uint tileSizeY;
+
+    uint numZSlices;
+} clusteringInfo;
+
+struct LightGridEntry
+{
+    uint offset;
+    uint nLights;
+};
+layout (std430, set = 1, binding = 2) buffer LightGrid
+{
+    LightGridEntry lightGrid[];
+};
+
+layout (std430, set = 1, binding = 3) buffer LightIndicesBuffer
+{
+    uint globalLightIndices[];
+};
 
 layout (set = 2, binding = 0) uniform sampler2D albedoTexture;
 layout (set = 2, binding = 1) uniform sampler2D metalnessRoughnessTexture;
@@ -27,6 +60,8 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0);
 
 vec3 gammaCorrection(vec3 v);
 vec3 reinhardTonemap(vec3 v);
+
+float linearDepth(float depthSample);
 
 const float PI = 3.14159265359;
 const float gamma = 1.8;
@@ -43,6 +78,7 @@ void main()
 
     if (texture(albedoTexture, inTexCoord).a < 0.5) discard;
 
+    // DIRECTIONAL LIGHT
     vec3 N = normalize(inNormal);
     vec3 V = normalize(inCameraPos - inWorldPos);
 
@@ -78,10 +114,21 @@ void main()
 
     Lo += (kD * (albedo / PI) + specular ) * radianceIn * nDotL;
 
-    for (int i = 0; i < N_LIGHTS; ++i)
+    // POINT LIGHTS
+    uvec2 tileDims = uvec2(clusteringInfo.screenDimensions / vec2(clusteringInfo.tileSizeX, clusteringInfo.tileSizeY));
+    uint zIndex = uint(max(log2(linearDepth(gl_FragCoord.z)) * clusteringInfo.scale + clusteringInfo.bias, 0.0));
+    uvec3 cluster = uvec3(uvec2(gl_FragCoord.xy / vec2(clusteringInfo.tileSizeX, clusteringInfo.tileSizeY)), zIndex);
+
+    uint clusterIdx = cluster.x +
+        tileDims.x * cluster.y +
+        tileDims.x * tileDims.y * cluster.z;
+
+    LightGridEntry gridEntry = lightGrid[clusterIdx];
+    for (uint i = 0; i < gridEntry.nLights; ++i)
     {
-        vec3 lightPosition = lightBuffer.lights[i].position.xyz;
-        vec3 lightColor = lightBuffer.lights[i].color.rgb;
+        uint lightIndex = globalLightIndices[gridEntry.offset + i];
+        vec3 lightPosition = lightBuffer.lights[lightIndex].position.xyz;
+        vec3 lightColor = lightBuffer.lights[lightIndex].color.rgb;
 
         // calculate per-light radiance
         vec3 L = normalize(lightPosition - inWorldPos);
@@ -163,4 +210,11 @@ vec3 reinhardTonemap(vec3 v) {
 
 vec3 gammaCorrection(vec3 v) {
     return pow(v, vec3(gamma));
+}
+
+float linearDepth(float depthSample) {
+    float depthRange = 2.0 * depthSample - 1.0;
+    float linear = 2.0 * clusteringInfo.zNear * clusteringInfo.zFar / (clusteringInfo.zFar +
+        clusteringInfo.zNear - depthRange * (clusteringInfo.zFar - clusteringInfo.zNear));
+    return linear;
 }

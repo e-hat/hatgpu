@@ -59,6 +59,36 @@ struct GpuLightData
 };
 
 static constexpr uint32_t kNumLights = 10;
+
+struct ClusteringInfo
+{
+    glm::mat4 projInverse;
+    glm::vec2 screenDimensions;
+    // defines view frustrum
+    float zFar;
+    float zNear;
+    float scale;
+    float bias;
+
+    // describing 2D tile dimensions
+    uint tileSizeX;
+    uint tileSizeY;
+
+    uint numZSlices;
+};
+
+struct LightGridEntry
+{
+    uint offset;
+    uint nLights;
+};
+
+static constexpr uint32_t kNumTilesX   = 9;
+static constexpr uint32_t kNumTilesY   = 16;
+static constexpr uint32_t kNumSlicesZ  = 24;
+static constexpr uint32_t kNumClusters = kNumTilesX * kNumTilesY * kNumSlicesZ;
+
+static constexpr uint32_t kMaxLightsPerCluster = 10;
 }  // namespace
 
 EfvkRenderer::EfvkRenderer() : Application("Efvk Rendering Engine") {}
@@ -185,8 +215,8 @@ void EfvkRenderer::createDescriptors()
     globalCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     globalCreateInfo.pNext        = nullptr;
     globalCreateInfo.bindingCount = layoutBindings.size();
-    globalCreateInfo.flags        = 0;
     globalCreateInfo.pBindings    = layoutBindings.data();
+    globalCreateInfo.flags        = 0;
 
     if (vkCreateDescriptorSetLayout(mDevice, &globalCreateInfo, nullptr, &mGlobalSetLayout) !=
         VK_SUCCESS)
@@ -197,12 +227,22 @@ void EfvkRenderer::createDescriptors()
     // Creating the clustering info descriptor set layout, which is used for clustered rendering
     VkDescriptorSetLayoutBinding lightBufferBinding = init::descriptorSetLayoutBinding(
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+    VkDescriptorSetLayoutBinding clusteringInfoBufferBinding = init::descriptorSetLayoutBinding(
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+    VkDescriptorSetLayoutBinding lightGridBufferBinding = init::descriptorSetLayoutBinding(
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
+    VkDescriptorSetLayoutBinding lightIndicesBufferBinding = init::descriptorSetLayoutBinding(
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 3);
+
+    std::array<VkDescriptorSetLayoutBinding, 4> clusteringBindings = {
+        lightBufferBinding, clusteringInfoBufferBinding, lightGridBufferBinding,
+        lightIndicesBufferBinding};
 
     VkDescriptorSetLayoutCreateInfo clusterCreateInfo{};
     clusterCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     clusterCreateInfo.pNext        = nullptr;
-    clusterCreateInfo.bindingCount = 1;
-    clusterCreateInfo.pBindings    = &lightBufferBinding;
+    clusterCreateInfo.bindingCount = clusteringBindings.size();
+    clusterCreateInfo.pBindings    = clusteringBindings.data();
     clusterCreateInfo.flags        = 0;
 
     if (vkCreateDescriptorSetLayout(mDevice, &clusterCreateInfo, nullptr, &mClusteringSetLayout) !=
@@ -257,6 +297,15 @@ void EfvkRenderer::createDescriptors()
         mFrames[i].lightBuffer =
             createBuffer(sizeof(GpuLightData) * kNumLights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                          VMA_MEMORY_USAGE_CPU_TO_GPU);
+        mFrames[i].clusteringInfoBuffer =
+            createBuffer(sizeof(ClusteringInfo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VMA_MEMORY_USAGE_CPU_TO_GPU);
+        mFrames[i].lightGridBuffer =
+            createBuffer(sizeof(LightGridEntry) * kNumClusters, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                         VMA_MEMORY_USAGE_CPU_TO_GPU);
+        mFrames[i].lightIndicesBuffer =
+            createBuffer(sizeof(uint32_t) * kNumClusters * kMaxLightsPerCluster,
+                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
         // Write the light buffer info
         VkDescriptorBufferInfo lightBufferInfo{};
@@ -268,11 +317,36 @@ void EfvkRenderer::createDescriptors()
             init::writeDescriptorBuffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                                         mFrames[i].clusteringDescriptor, &lightBufferInfo, 0);
 
-        std::array<VkWriteDescriptorSet, 3> writes = {
-            cameraSetWrite,
-            objSetWrite,
-            lightSetWrite,
-        };
+        VkDescriptorBufferInfo clusteringBufferInfo;
+        clusteringBufferInfo.buffer = mFrames[i].clusteringInfoBuffer.buffer;
+        clusteringBufferInfo.offset = 0;
+        clusteringBufferInfo.range  = sizeof(ClusteringInfo);
+
+        VkWriteDescriptorSet clusteringSetWrite =
+            init::writeDescriptorBuffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                        mFrames[i].clusteringDescriptor, &clusteringBufferInfo, 1);
+
+        VkDescriptorBufferInfo lightGridBufferInfo{};
+        lightGridBufferInfo.buffer = mFrames[i].lightGridBuffer.buffer;
+        lightGridBufferInfo.offset = 0;
+        lightGridBufferInfo.range  = sizeof(LightGridEntry) * kNumClusters;
+
+        VkWriteDescriptorSet lightGridSetWrite =
+            init::writeDescriptorBuffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                        mFrames[i].clusteringDescriptor, &lightGridBufferInfo, 2);
+
+        VkDescriptorBufferInfo lightIndicesBufferInfo{};
+        lightIndicesBufferInfo.buffer = mFrames[i].lightIndicesBuffer.buffer;
+        lightIndicesBufferInfo.offset = 0;
+        lightIndicesBufferInfo.range  = sizeof(uint32_t) * kNumClusters * kMaxLightsPerCluster;
+
+        VkWriteDescriptorSet lightIndicesSetWrite = init::writeDescriptorBuffer(
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, mFrames[i].clusteringDescriptor,
+            &lightIndicesBufferInfo, 3);
+
+        std::array<VkWriteDescriptorSet, 6> writes = {cameraSetWrite,    objSetWrite,
+                                                      lightSetWrite,     clusteringSetWrite,
+                                                      lightGridSetWrite, lightIndicesSetWrite};
 
         vkUpdateDescriptorSets(mDevice, writes.size(), writes.data(), 0, nullptr);
     }
@@ -307,6 +381,12 @@ void EfvkRenderer::createDescriptors()
                              mFrames[i].cameraBuffer.allocation);
             vmaDestroyBuffer(mAllocator, mFrames[i].lightBuffer.buffer,
                              mFrames[i].lightBuffer.allocation);
+            vmaDestroyBuffer(mAllocator, mFrames[i].clusteringInfoBuffer.buffer,
+                             mFrames[i].clusteringInfoBuffer.allocation);
+            vmaDestroyBuffer(mAllocator, mFrames[i].lightGridBuffer.buffer,
+                             mFrames[i].lightGridBuffer.allocation);
+            vmaDestroyBuffer(mAllocator, mFrames[i].lightIndicesBuffer.buffer,
+                             mFrames[i].lightIndicesBuffer.allocation);
         }
     });
 }
@@ -945,6 +1025,47 @@ void EfvkRenderer::createScene()
                     {glm::vec3(-1.f, -5.f, -0.f)}, {glm::vec3(1.f, -3.f, 0.f)},
                     {glm::vec3(3.f, -5.f, 0.f)},   {glm::vec3(0.f, -2.5f, 0.5f)},
                     {glm::vec3(5.5f, -3.f, 0.5f)}, {glm::vec3(2.157111, -0.254994, -0.576244)}};
+
+    void *data;
+    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+    {
+        vmaMapMemory(mAllocator, mFrames[i].clusteringInfoBuffer.allocation, &data);
+        ClusteringInfo clusteringInfo{};
+        clusteringInfo.projInverse      = glm::inverse(mCamera.GetProjectionMatrix());
+        clusteringInfo.screenDimensions = glm::vec2(mCamera.ScreenWidth, mCamera.ScreenHeight);
+        clusteringInfo.zNear            = mCamera.Near;
+        clusteringInfo.zFar             = mCamera.Far;
+        clusteringInfo.tileSizeX        = mCamera.ScreenWidth / kNumTilesX;
+        clusteringInfo.tileSizeY        = mCamera.ScreenHeight / kNumTilesY;
+        clusteringInfo.numZSlices       = kNumSlicesZ;
+        clusteringInfo.scale =
+            static_cast<float>(kNumSlicesZ) / glm::log2(mCamera.Far / mCamera.Near);
+        clusteringInfo.bias = static_cast<float>(kNumSlicesZ) * glm::log2(mCamera.Near) /
+                              glm::log2(mCamera.Far / mCamera.Near);
+        std::memcpy(data, &clusteringInfo, sizeof(ClusteringInfo));
+
+        vmaUnmapMemory(mAllocator, mFrames[i].clusteringInfoBuffer.allocation);
+
+        vmaMapMemory(mAllocator, mFrames[i].lightGridBuffer.allocation, &data);
+        auto entries = static_cast<LightGridEntry *>(data);
+        for (size_t clusterIdx = 0; clusterIdx < kNumClusters; ++clusterIdx)
+        {
+            entries[clusterIdx].nLights = kNumLights;
+            entries[clusterIdx].offset  = clusterIdx * kNumLights;
+        }
+        vmaUnmapMemory(mAllocator, mFrames[i].lightGridBuffer.allocation);
+
+        vmaMapMemory(mAllocator, mFrames[i].lightIndicesBuffer.allocation, &data);
+        auto indices = static_cast<uint32_t *>(data);
+        for (size_t gridIndex = 0; gridIndex < kNumClusters; ++gridIndex)
+        {
+            for (size_t offset = 0; offset < kNumLights; ++offset)
+            {
+                indices[gridIndex * kNumLights + offset] = offset;
+            }
+        }
+        vmaUnmapMemory(mAllocator, mFrames[i].lightIndicesBuffer.allocation);
+    }
 }
 
 void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)

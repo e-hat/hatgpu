@@ -83,6 +83,9 @@ class EfvkRenderer : public Application
 
         VkDescriptorSet clusteringDescriptor;
         AllocatedBuffer lightBuffer;
+        AllocatedBuffer clusteringInfoBuffer;
+        AllocatedBuffer lightGridBuffer;
+        AllocatedBuffer lightIndicesBuffer;
     };
     std::array<FrameData, kMaxFramesInFlight> mFrames;
 
