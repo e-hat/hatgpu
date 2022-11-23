@@ -107,11 +107,14 @@ void EfvkRenderer::Init()
 
     mDeleters.emplace_back([this]() { vmaDestroyAllocator(mAllocator); });
 
+    createComputeCommandPool();
+    createComputeCommandBuffers();
     createUploadContext();
     createDepthImage();
     createRenderPass();
     createDescriptors();
     createGraphicsPipeline();
+    createComputePipelines();
     createFramebuffers(mRenderPass);
 
     createScene();
@@ -230,7 +233,8 @@ void EfvkRenderer::createDescriptors()
     VkDescriptorSetLayoutBinding clusteringInfoBufferBinding = init::descriptorSetLayoutBinding(
         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
     VkDescriptorSetLayoutBinding lightGridBufferBinding = init::descriptorSetLayoutBinding(
-        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT, 2);
     VkDescriptorSetLayoutBinding lightIndicesBufferBinding = init::descriptorSetLayoutBinding(
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 3);
 
@@ -471,14 +475,14 @@ void EfvkRenderer::createGraphicsPipeline()
     pipelineLayoutCreateInfo.setLayoutCount             = layouts.size();
     pipelineLayoutCreateInfo.pSetLayouts                = layouts.data();
 
-    if (vkCreatePipelineLayout(mDevice, &pipelineLayoutCreateInfo, nullptr, &mPipelineLayout) !=
-        VK_SUCCESS)
+    if (vkCreatePipelineLayout(mDevice, &pipelineLayoutCreateInfo, nullptr,
+                               &mGraphicsPipelineLayout) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to create pipeline layout object");
     }
 
     mDeleters.emplace_back(
-        [this]() { vkDestroyPipelineLayout(mDevice, mPipelineLayout, nullptr); });
+        [this]() { vkDestroyPipelineLayout(mDevice, mGraphicsPipelineLayout, nullptr); });
 
     std::array<VkDynamicState, 2> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
                                                    VK_DYNAMIC_STATE_SCISSOR};
@@ -501,7 +505,7 @@ void EfvkRenderer::createGraphicsPipeline()
     pipelineInfo.pColorBlendState    = &colorBlending;
     pipelineInfo.pDynamicState       = &dynamicState;
 
-    pipelineInfo.layout     = mPipelineLayout;
+    pipelineInfo.layout     = mGraphicsPipelineLayout;
     pipelineInfo.renderPass = mRenderPass;
     pipelineInfo.subpass    = 0;
 
@@ -515,6 +519,70 @@ void EfvkRenderer::createGraphicsPipeline()
 
     vkDestroyShaderModule(mDevice, vertShaderModule, nullptr);
     vkDestroyShaderModule(mDevice, fragShaderModule, nullptr);
+}
+
+void EfvkRenderer::createComputePipelines()
+{
+    const auto aabbShader     = readFile("../shaders/bin/compute/aabb_gen.comp.spv");
+    VkShaderModule aabbModule = createShaderModule(aabbShader);
+
+    VkPipelineShaderStageCreateInfo aabbStageInfo =
+        init::pipelineShaderStageInfo(VK_SHADER_STAGE_COMPUTE_BIT, aabbModule);
+
+    VkPipelineLayoutCreateInfo aabbLayoutInfo = init::pipelineLayoutInfo();
+    aabbLayoutInfo.pushConstantRangeCount     = 0;
+    aabbLayoutInfo.pPushConstantRanges        = nullptr;
+    aabbLayoutInfo.setLayoutCount             = 1;
+    aabbLayoutInfo.pSetLayouts                = &mClusteringSetLayout;
+
+    if (vkCreatePipelineLayout(mDevice, &aabbLayoutInfo, nullptr, &mAabbPipelineLayout) !=
+        VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create AABB pipeline layout");
+    }
+
+    mDeleters.emplace_back(
+        [this]() { vkDestroyPipelineLayout(mDevice, mAabbPipelineLayout, nullptr); });
+
+    VkComputePipelineCreateInfo aabbPipelineInfo{};
+    aabbPipelineInfo.sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    aabbPipelineInfo.pNext  = nullptr;
+    aabbPipelineInfo.layout = mAabbPipelineLayout;
+    aabbPipelineInfo.stage  = aabbStageInfo;
+
+    if (vkCreateComputePipelines(mDevice, VK_NULL_HANDLE, 1, &aabbPipelineInfo, nullptr,
+                                 &mAabbPipeline) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create AABB compute pipeline");
+    }
+
+    mDeleters.emplace_back([this]() { vkDestroyPipeline(mDevice, mAabbPipeline, nullptr); });
+
+    vkDestroyShaderModule(mDevice, aabbModule, nullptr);
+}
+
+void EfvkRenderer::createComputeCommandPool()
+{
+    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(mPhysicalDevice, mSurface);
+
+    VkCommandPoolCreateInfo createInfo = init::commandPoolInfo(
+        *queueFamilyIndices.computeFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    if (vkCreateCommandPool(mDevice, &createInfo, nullptr, &mComputeCmdPool) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create compute command pool");
+    }
+
+    mDeleters.emplace_back([this]() { vkDestroyCommandPool(mDevice, mComputeCmdPool, nullptr); });
+}
+
+void EfvkRenderer::createComputeCommandBuffers()
+{
+    // Create command buffer for the single AABB generation pass that runs on startup
+    VkCommandBufferAllocateInfo aabbAllocInfo = init::commandBufferAllocInfo(mComputeCmdPool);
+    if (vkAllocateCommandBuffers(mDevice, &aabbAllocInfo, &mAabbCmds) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to allocate AABB command buffer");
+    }
 }
 
 void EfvkRenderer::createUploadContext()
@@ -1070,8 +1138,8 @@ void EfvkRenderer::createScene()
 
 void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 {
-    TracyVkZoneC(mCurrentApplicationFrame->tracyContext, mCurrentApplicationFrame->commandBuffer,
-                 "drawObjects", tracy::Color::Blue);
+    TracyVkZoneC(mCurrentApplicationFrame->tracyContext, commandBuffer, "drawObjects",
+                 tracy::Color::Blue);
     const glm::mat4 view     = mCamera.GetViewMatrix();
     const glm::mat4 proj     = mCamera.GetProjectionMatrix();
     const glm::mat4 viewproj = proj * view;
@@ -1082,36 +1150,42 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
     cameraData.viewproj = viewproj;
     cameraData.position = mCamera.Position;
 
-    // Writing camera data
-    void *data;
-    vmaMapMemory(mAllocator, mFrames[mCurrentFrameIndex].cameraBuffer.allocation, &data);
-    std::memcpy(data, &cameraData, sizeof(GpuCameraData));
-    vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].cameraBuffer.allocation);
-
-    // Writing all of the object transforms
-    vmaMapMemory(mAllocator, mFrames[mCurrentFrameIndex].objectBuffer.allocation, &data);
-    auto objectData = static_cast<GpuObjectData *>(data);
-    for (size_t i = 0; i < mRenderables.size(); ++i)
     {
-        objectData[i].modelTransform = mRenderables[i].transform;
-    }
-    vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].objectBuffer.allocation);
+        ZoneScopedNC("Scene buffer writes", tracy::Color::DeepSkyBlue4);
+        TracyVkZoneC(mCurrentApplicationFrame->tracyContext, commandBuffer, "Scene buffer writes",
+                     tracy::Color::Olive);
+        // Writing camera data
+        void *data;
+        vmaMapMemory(mAllocator, mFrames[mCurrentFrameIndex].cameraBuffer.allocation, &data);
+        std::memcpy(data, &cameraData, sizeof(GpuCameraData));
+        vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].cameraBuffer.allocation);
 
-    // Writing the lights to the light buffer
-    vmaMapMemory(mAllocator, mFrames[mCurrentFrameIndex].lightBuffer.allocation, &data);
-    auto lightBufferData = static_cast<GpuLightData *>(data);
-    for (size_t i = 0; i < kNumLights; ++i)
-    {
-        lightBufferData[i].position = glm::vec4(mPointLights[i].position, 0.f);
-        lightBufferData[i].color    = glm::vec4(mPointLights[i].color, 0.f);
-    }
-    vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].lightBuffer.allocation);
+        // Writing all of the object transforms
+        vmaMapMemory(mAllocator, mFrames[mCurrentFrameIndex].objectBuffer.allocation, &data);
+        auto objectData = static_cast<GpuObjectData *>(data);
+        for (size_t i = 0; i < mRenderables.size(); ++i)
+        {
+            objectData[i].modelTransform = mRenderables[i].transform;
+        }
+        vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].objectBuffer.allocation);
 
-    std::array<VkDescriptorSet, 2> descriptorSets = {
-        mFrames[mCurrentFrameIndex].globalDescriptor,
-        mFrames[mCurrentFrameIndex].clusteringDescriptor};
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 0,
-                            descriptorSets.size(), descriptorSets.data(), 0, nullptr);
+        // Writing the lights to the light buffer
+        vmaMapMemory(mAllocator, mFrames[mCurrentFrameIndex].lightBuffer.allocation, &data);
+        auto lightBufferData = static_cast<GpuLightData *>(data);
+        for (size_t i = 0; i < kNumLights; ++i)
+        {
+            lightBufferData[i].position = glm::vec4(mPointLights[i].position, 0.f);
+            lightBufferData[i].color    = glm::vec4(mPointLights[i].color, 0.f);
+        }
+        vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].lightBuffer.allocation);
+
+        std::array<VkDescriptorSet, 2> descriptorSets = {
+            mFrames[mCurrentFrameIndex].globalDescriptor,
+            mFrames[mCurrentFrameIndex].clusteringDescriptor};
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                mGraphicsPipelineLayout, 0, descriptorSets.size(),
+                                descriptorSets.data(), 0, nullptr);
+    }
 
     for (const auto &object : mRenderables)
     {
@@ -1130,8 +1204,8 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer.buffer, &offset);
             vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout,
-                                    2, 1, &mesh.descriptor, 0, nullptr);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    mGraphicsPipelineLayout, 2, 1, &mesh.descriptor, 0, nullptr);
 
             vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
         }

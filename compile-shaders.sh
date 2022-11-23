@@ -3,6 +3,7 @@ compile_shader() {
 
 }
 
-mkdir -p 'shaders/bin'
+mkdir -p 'shaders/bin/compute'
 compile_shader 'shader.vert'
 compile_shader 'shader.frag'
+compile_shader 'compute/aabb_gen.comp'

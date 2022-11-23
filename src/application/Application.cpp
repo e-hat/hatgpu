@@ -84,7 +84,12 @@ debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 {
     if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
     {
-        std::cerr << "Validation layer: " << pCallbackData->pMessage << '\n';
+        // use std::endl to flush the stream, else errors might pop up at random times during
+        // execution (this actually happened :O)
+        std::cerr << "Validation layer: " << pCallbackData->pMessage << std::endl;
+#ifdef VALIDATION_DEBUG_BREAK
+        __builtin_trap();
+#endif
     }
 
     return VK_FALSE;
@@ -107,9 +112,9 @@ VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
     }
 }
 
-void DestroyDebugUtilsMessengerEXT(VkInstance instance,
-                                   VkDebugUtilsMessengerEXT debugMessenger,
-                                   const VkAllocationCallbacks *pAllocator)
+[[maybe_unused]] void DestroyDebugUtilsMessengerEXT(VkInstance instance,
+                                                    VkDebugUtilsMessengerEXT debugMessenger,
+                                                    const VkAllocationCallbacks *pAllocator)
 {
     auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
         instance, "vkDestroyDebugUtilsMessengerEXT");
@@ -504,8 +509,6 @@ Application::QueueFamilyIndices Application::findQueueFamilies(const VkPhysicalD
     uint32_t i = 0;
     for (const auto &queueFamily : queueFamilies)
     {
-        // TODO: query the compute queue family index.
-
         if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
         {
             indices.graphicsFamily = i;
@@ -516,6 +519,11 @@ Application::QueueFamilyIndices Application::findQueueFamilies(const VkPhysicalD
         if (presentSupport)
         {
             indices.presentFamily = i;
+        }
+
+        if (queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)
+        {
+            indices.computeFamily = i;
         }
 
         if (indices.IsComplete())

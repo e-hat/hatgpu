@@ -63,8 +63,13 @@ class Application
     {
         std::optional<uint32_t> graphicsFamily;
         std::optional<uint32_t> presentFamily;
+        std::optional<uint32_t> computeFamily;
 
-        bool IsComplete() const { return graphicsFamily.has_value() && presentFamily.has_value(); }
+        bool IsComplete() const
+        {
+            return graphicsFamily.has_value() && presentFamily.has_value() &&
+                   computeFamily.has_value();
+        }
     };
     static QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice &device,
                                                 const VkSurfaceKHR &surface);
@@ -85,6 +90,7 @@ class Application
     VkQueue mGraphicsQueue;
     uint32_t mGraphicsQueueIndex;
     VkQueue mPresentQueue;
+    VkQueue mComputeQueue;
 
     bool mFramebufferResized{false};
 

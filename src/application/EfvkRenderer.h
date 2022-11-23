@@ -32,10 +32,13 @@ class EfvkRenderer : public Application
     void OnRecreateSwapchain() override;
 
   private:
+    void createComputeCommandPool();
+    void createComputeCommandBuffers();
     void createUploadContext();
     void createRenderPass();
     void createDescriptors();
     void createGraphicsPipeline();
+    void createComputePipelines();
     void createDepthImage();
     void createFramebuffers(const VkRenderPass &renderPass);
     void createScene();
@@ -61,7 +64,7 @@ class EfvkRenderer : public Application
     void immediateSubmit(std::function<void(VkCommandBuffer cmd)> &&function);
 
     VkRenderPass mRenderPass;
-    VkPipelineLayout mPipelineLayout;
+    VkPipelineLayout mGraphicsPipelineLayout;
     VkPipeline mGraphicsPipeline;
     VmaAllocator mAllocator;
 
@@ -75,6 +78,14 @@ class EfvkRenderer : public Application
 
     VkDescriptorPool mDescriptorPool;
 
+    // Compute objects
+    VkCommandPool mComputeCmdPool;
+
+    // AABB generation
+    VkPipeline mAabbPipeline;
+    VkPipelineLayout mAabbPipelineLayout;
+    VkCommandBuffer mAabbCmds;
+
     struct FrameData
     {
         VkDescriptorSet globalDescriptor;
@@ -86,6 +97,8 @@ class EfvkRenderer : public Application
         AllocatedBuffer clusteringInfoBuffer;
         AllocatedBuffer lightGridBuffer;
         AllocatedBuffer lightIndicesBuffer;
+
+        VkCommandBuffer computeCmds;
     };
     std::array<FrameData, kMaxFramesInFlight> mFrames;
 
