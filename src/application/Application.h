@@ -90,7 +90,6 @@ class Application
     VkQueue mGraphicsQueue;
     uint32_t mGraphicsQueueIndex;
     VkQueue mPresentQueue;
-    VkQueue mComputeQueue;
 
     bool mFramebufferResized{false};
 

@@ -83,6 +83,12 @@ struct LightGridEntry
     uint nLights;
 };
 
+struct Aabb
+{
+    glm::vec4 minPt;
+    glm::vec4 maxPt;
+};
+
 static constexpr uint32_t kNumTilesX   = 9;
 static constexpr uint32_t kNumTilesY   = 16;
 static constexpr uint32_t kNumSlicesZ  = 24;
@@ -107,9 +113,6 @@ void EfvkRenderer::Init()
 
     mDeleters.emplace_back([this]() { vmaDestroyAllocator(mAllocator); });
 
-    createComputeCommandPool();
-    createComputeCommandBuffers();
-    createComputeSyncObjects();
     createUploadContext();
     createDepthImage();
     createRenderPass();
@@ -240,10 +243,12 @@ void EfvkRenderer::createDescriptors()
         VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT, 2);
     VkDescriptorSetLayoutBinding lightIndicesBufferBinding = init::descriptorSetLayoutBinding(
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 3);
+    VkDescriptorSetLayoutBinding aabbBufferBinding = init::descriptorSetLayoutBinding(
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT, 4);
 
-    std::array<VkDescriptorSetLayoutBinding, 4> clusteringBindings = {
+    std::array<VkDescriptorSetLayoutBinding, 5> clusteringBindings = {
         lightBufferBinding, clusteringInfoBufferBinding, lightGridBufferBinding,
-        lightIndicesBufferBinding};
+        lightIndicesBufferBinding, aabbBufferBinding};
 
     VkDescriptorSetLayoutCreateInfo clusterCreateInfo{};
     clusterCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -257,6 +262,10 @@ void EfvkRenderer::createDescriptors()
     {
         throw std::runtime_error("Unable to create clustering descriptor set layout");
     }
+
+    // Allocate the aabb buffer
+    mAabbBuffer = createBuffer(sizeof(Aabb) * kNumClusters, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                               VMA_MEMORY_USAGE_GPU_ONLY);
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
@@ -351,9 +360,17 @@ void EfvkRenderer::createDescriptors()
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, mFrames[i].clusteringDescriptor,
             &lightIndicesBufferInfo, 3);
 
-        std::array<VkWriteDescriptorSet, 6> writes = {cameraSetWrite,    objSetWrite,
-                                                      lightSetWrite,     clusteringSetWrite,
-                                                      lightGridSetWrite, lightIndicesSetWrite};
+        VkDescriptorBufferInfo aabbBufferInfo{};
+        aabbBufferInfo.buffer = mAabbBuffer.buffer;
+        aabbBufferInfo.offset = 0;
+        aabbBufferInfo.range  = sizeof(Aabb) * kNumClusters;
+
+        VkWriteDescriptorSet aabbBufferSetWrite = init::writeDescriptorBuffer(
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, mFrames[i].clusteringDescriptor, &aabbBufferInfo, 4);
+
+        std::array<VkWriteDescriptorSet, 7> writes = {
+            cameraSetWrite,    objSetWrite,          lightSetWrite,     clusteringSetWrite,
+            lightGridSetWrite, lightIndicesSetWrite, aabbBufferSetWrite};
 
         vkUpdateDescriptorSets(mDevice, writes.size(), writes.data(), 0, nullptr);
     }
@@ -379,6 +396,8 @@ void EfvkRenderer::createDescriptors()
         vkDestroyDescriptorSetLayout(mDevice, mTextureSetLayout, nullptr);
         vkDestroyDescriptorSetLayout(mDevice, mClusteringSetLayout, nullptr);
         vkDestroyDescriptorPool(mDevice, mDescriptorPool, nullptr);
+
+        vmaDestroyBuffer(mAllocator, mAabbBuffer.buffer, mAabbBuffer.allocation);
 
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
@@ -562,50 +581,6 @@ void EfvkRenderer::createComputePipelines()
     mDeleters.emplace_back([this]() { vkDestroyPipeline(mDevice, mAabbPipeline, nullptr); });
 
     vkDestroyShaderModule(mDevice, aabbModule, nullptr);
-}
-
-void EfvkRenderer::createComputeCommandPool()
-{
-    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(mPhysicalDevice, mSurface);
-
-    VkCommandPoolCreateInfo createInfo = init::commandPoolInfo(
-        *queueFamilyIndices.computeFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-    if (vkCreateCommandPool(mDevice, &createInfo, nullptr, &mComputeCmdPool) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create compute command pool");
-    }
-
-    mDeleters.emplace_back([this]() { vkDestroyCommandPool(mDevice, mComputeCmdPool, nullptr); });
-}
-
-void EfvkRenderer::createComputeCommandBuffers()
-{
-    // Create command buffer for the single AABB generation pass that runs on startup
-    VkCommandBufferAllocateInfo aabbAllocInfo = init::commandBufferAllocInfo(mComputeCmdPool);
-    if (vkAllocateCommandBuffers(mDevice, &aabbAllocInfo, &mAabbCmds) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to allocate AABB command buffer");
-    }
-}
-
-void EfvkRenderer::createComputeSyncObjects()
-{
-    VkSemaphoreCreateInfo lightGridSemaphoreInfo = init::semaphoreInfo();
-    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
-    {
-        if (vkCreateSemaphore(mDevice, &lightGridSemaphoreInfo, nullptr,
-                              &mFrames[i].lightGridReadySemaphore) != VK_SUCCESS)
-        {
-            throw std::runtime_error("Failed to create light grid semaphore");
-        }
-    }
-
-    mDeleters.emplace_back([this]() {
-        for (size_t i = 0; i < kMaxFramesInFlight; ++i)
-        {
-            vkDestroySemaphore(mDevice, mFrames[i].lightGridReadySemaphore, nullptr);
-        }
-    });
 }
 
 void EfvkRenderer::createUploadContext()
@@ -1161,43 +1136,30 @@ void EfvkRenderer::createScene()
 
 void EfvkRenderer::generateAabb()
 {
-    vkResetCommandBuffer(mAabbCmds, 0);
-    VkCommandBufferBeginInfo beginInfo = init::commandBufferBeginInfo();
-    if (vkBeginCommandBuffer(mAabbCmds, &beginInfo) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to begin recording AABB generation command buffer");
-    }
+    immediateSubmit([this](VkCommandBuffer cmd) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, mAabbPipeline);
 
-    vkCmdBindPipeline(mAabbCmds, VK_PIPELINE_BIND_POINT_COMPUTE, mAabbPipeline);
+        for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+        {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, mAabbPipelineLayout, 0, 1,
+                                    &mFrames[i].clusteringDescriptor, 0, nullptr);
+            vkCmdDispatch(cmd, kNumTilesX, kNumTilesY, kNumSlicesZ);
+        }
 
-    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
-    {
-        vkCmdBindDescriptorSets(mAabbCmds, VK_PIPELINE_BIND_POINT_COMPUTE, mAabbPipelineLayout, 0,
-                                1, &mFrames[i].clusteringDescriptor, 0, nullptr);
-        vkCmdDispatch(mAabbCmds, kNumTilesX, kNumTilesY, kNumSlicesZ);
-    }
-
-    if (vkEndCommandBuffer(mAabbCmds) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to stop recording AABB generation command buffer");
-    }
-
-    VkSubmitInfo submitInfo = init::submitInfo(&mAabbCmds);
-    std::vector<VkSemaphore> signalSemaphores(kMaxFramesInFlight);
-    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
-    {
-        signalSemaphores[i] = mFrames[i].lightGridReadySemaphore;
-    }
-    submitInfo.signalSemaphoreCount = signalSemaphores.size();
-    submitInfo.pSignalSemaphores    = signalSemaphores.data();
-    submitInfo.commandBufferCount   = 1;
-    submitInfo.pCommandBuffers      = &mAabbCmds;
-    submitInfo.pWaitDstStageMask    = nullptr;
-
-    if (vkQueueSubmit(mComputeQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to submit AABB generation commands");
-    }
+        VkBufferMemoryBarrier barrierInfo{};
+        barrierInfo.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        barrierInfo.pNext               = nullptr;
+        barrierInfo.srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
+        barrierInfo.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+        barrierInfo.srcQueueFamilyIndex = mGraphicsQueueIndex;
+        barrierInfo.dstQueueFamilyIndex = mGraphicsQueueIndex;
+        barrierInfo.buffer              = mAabbBuffer.buffer;
+        barrierInfo.offset              = 0;
+        barrierInfo.size                = VK_WHOLE_SIZE;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 1, &barrierInfo,
+                             0, nullptr);
+    });
 }
 
 void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)

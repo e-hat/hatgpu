@@ -638,7 +638,6 @@ void Application::createLogicalDevice()
     vkGetDeviceQueue(mDevice, *indices.graphicsFamily, 0, &mGraphicsQueue);
     mGraphicsQueueIndex = *indices.graphicsFamily;
     vkGetDeviceQueue(mDevice, *indices.presentFamily, 0, &mPresentQueue);
-    vkGetDeviceQueue(mDevice, *indices.computeFamily, 0, &mComputeQueue);
 }
 
 void Application::createSwapchain()

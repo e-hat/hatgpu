@@ -32,10 +32,6 @@ class EfvkRenderer : public Application
     void OnRecreateSwapchain() override;
 
   private:
-    void createComputeCommandPool();
-    void createComputeCommandBuffers();
-    void createComputeSyncObjects();
-
     void createUploadContext();
     void createRenderPass();
     void createDescriptors();
@@ -80,13 +76,11 @@ class EfvkRenderer : public Application
 
     VkDescriptorPool mDescriptorPool;
 
-    // Compute objects
-    VkCommandPool mComputeCmdPool;
-
     // AABB generation
     VkPipeline mAabbPipeline;
     VkPipelineLayout mAabbPipelineLayout;
-    VkCommandBuffer mAabbCmds;
+    AllocatedBuffer mAabbBuffer;
+
     void generateAabb();
 
     struct FrameData
