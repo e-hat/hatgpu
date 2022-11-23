@@ -109,6 +109,7 @@ void EfvkRenderer::Init()
 
     createComputeCommandPool();
     createComputeCommandBuffers();
+    createComputeSyncObjects();
     createUploadContext();
     createDepthImage();
     createRenderPass();
@@ -118,6 +119,8 @@ void EfvkRenderer::Init()
     createFramebuffers(mRenderPass);
 
     createScene();
+
+    generateAabb();
 }
 
 void EfvkRenderer::Exit() {}
@@ -583,6 +586,26 @@ void EfvkRenderer::createComputeCommandBuffers()
     {
         throw std::runtime_error("Failed to allocate AABB command buffer");
     }
+}
+
+void EfvkRenderer::createComputeSyncObjects()
+{
+    VkSemaphoreCreateInfo lightGridSemaphoreInfo = init::semaphoreInfo();
+    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+    {
+        if (vkCreateSemaphore(mDevice, &lightGridSemaphoreInfo, nullptr,
+                              &mFrames[i].lightGridReadySemaphore) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to create light grid semaphore");
+        }
+    }
+
+    mDeleters.emplace_back([this]() {
+        for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+        {
+            vkDestroySemaphore(mDevice, mFrames[i].lightGridReadySemaphore, nullptr);
+        }
+    });
 }
 
 void EfvkRenderer::createUploadContext()
@@ -1133,6 +1156,47 @@ void EfvkRenderer::createScene()
             }
         }
         vmaUnmapMemory(mAllocator, mFrames[i].lightIndicesBuffer.allocation);
+    }
+}
+
+void EfvkRenderer::generateAabb()
+{
+    vkResetCommandBuffer(mAabbCmds, 0);
+    VkCommandBufferBeginInfo beginInfo = init::commandBufferBeginInfo();
+    if (vkBeginCommandBuffer(mAabbCmds, &beginInfo) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to begin recording AABB generation command buffer");
+    }
+
+    vkCmdBindPipeline(mAabbCmds, VK_PIPELINE_BIND_POINT_COMPUTE, mAabbPipeline);
+
+    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+    {
+        vkCmdBindDescriptorSets(mAabbCmds, VK_PIPELINE_BIND_POINT_COMPUTE, mAabbPipelineLayout, 0,
+                                1, &mFrames[i].clusteringDescriptor, 0, nullptr);
+        vkCmdDispatch(mAabbCmds, kNumTilesX, kNumTilesY, kNumSlicesZ);
+    }
+
+    if (vkEndCommandBuffer(mAabbCmds) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to stop recording AABB generation command buffer");
+    }
+
+    VkSubmitInfo submitInfo = init::submitInfo(&mAabbCmds);
+    std::vector<VkSemaphore> signalSemaphores(kMaxFramesInFlight);
+    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+    {
+        signalSemaphores[i] = mFrames[i].lightGridReadySemaphore;
+    }
+    submitInfo.signalSemaphoreCount = signalSemaphores.size();
+    submitInfo.pSignalSemaphores    = signalSemaphores.data();
+    submitInfo.commandBufferCount   = 1;
+    submitInfo.pCommandBuffers      = &mAabbCmds;
+    submitInfo.pWaitDstStageMask    = nullptr;
+
+    if (vkQueueSubmit(mComputeQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to submit AABB generation commands");
     }
 }
 

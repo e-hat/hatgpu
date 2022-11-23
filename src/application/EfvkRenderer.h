@@ -34,6 +34,8 @@ class EfvkRenderer : public Application
   private:
     void createComputeCommandPool();
     void createComputeCommandBuffers();
+    void createComputeSyncObjects();
+
     void createUploadContext();
     void createRenderPass();
     void createDescriptors();
@@ -85,6 +87,7 @@ class EfvkRenderer : public Application
     VkPipeline mAabbPipeline;
     VkPipelineLayout mAabbPipelineLayout;
     VkCommandBuffer mAabbCmds;
+    void generateAabb();
 
     struct FrameData
     {
@@ -93,12 +96,15 @@ class EfvkRenderer : public Application
         AllocatedBuffer objectBuffer;
 
         VkDescriptorSet clusteringDescriptor;
-        AllocatedBuffer lightBuffer;
-        AllocatedBuffer clusteringInfoBuffer;
-        AllocatedBuffer lightGridBuffer;
-        AllocatedBuffer lightIndicesBuffer;
 
-        VkCommandBuffer computeCmds;
+        AllocatedBuffer lightBuffer;
+
+        AllocatedBuffer clusteringInfoBuffer;
+
+        VkSemaphore lightGridReadySemaphore;
+        AllocatedBuffer lightGridBuffer;
+
+        AllocatedBuffer lightIndicesBuffer;
     };
     std::array<FrameData, kMaxFramesInFlight> mFrames;
 
