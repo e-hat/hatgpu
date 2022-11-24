@@ -27,7 +27,7 @@ set(SOURCES ${SOURCES} ${SOURCE_DIR}/main.cpp
         ${SOURCE_DIR}/geometry/Model.cpp
         ${SOURCE_DIR}/geometry/Model.h
         ${SOURCE_DIR}/initializers.h
-        ${SOURCE_DIR}/initializers.cpp)
+        ${SOURCE_DIR}/initializers.cpp src/util/Random.h)
 add_executable(efvk ${SOURCES})
 
 set(INCLUDES ${SOURCE_DIR})
@@ -65,6 +65,7 @@ target_include_directories(efvk PRIVATE ${Vulkan_INCLUDE_DIRS})
 
 target_precompile_headers(efvk PRIVATE ${SOURCE_DIR}/efpch.h)
 
+# target_compile_definitions(efvk PRIVATE DEBUG VALIDATION_DEBUG_BREAK)
 target_compile_definitions(efvk PRIVATE DEBUG)
 target_compile_definitions(efvk PUBLIC TRACY_ENABLE)
 

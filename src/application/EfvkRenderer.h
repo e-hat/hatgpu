@@ -81,7 +81,12 @@ class EfvkRenderer : public Application
     VkPipelineLayout mAabbPipelineLayout;
     AllocatedBuffer mAabbBuffer;
 
+    // Light culling
+    VkPipeline mLightCullPipeline;
+    VkPipelineLayout mLightCullLayout;
+
     void generateAabb();
+    void cullLights(VkCommandBuffer cmd, uint32_t imageIndex);
 
     struct FrameData
     {
@@ -95,10 +100,11 @@ class EfvkRenderer : public Application
 
         AllocatedBuffer clusteringInfoBuffer;
 
-        VkSemaphore lightGridReadySemaphore;
         AllocatedBuffer lightGridBuffer;
 
         AllocatedBuffer lightIndicesBuffer;
+
+        AllocatedBuffer activeLightsBuffer;
     };
     std::array<FrameData, kMaxFramesInFlight> mFrames;
 

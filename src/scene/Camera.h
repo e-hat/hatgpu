@@ -18,11 +18,12 @@ enum class CameraMovement
     LOOKRIGHT
 };
 
-const float YAW         = -90.0f;
-const float PITCH       = 0.0f;
-const float SPEED       = 2.5F;
-const float SENSITIVITY = 0.1f;
-const float ZOOM        = 45.0f;
+const float YAW            = -90.0f;
+const float PITCH          = 0.0f;
+const float SPEED          = 2.5F;
+const float SENSITIVITY    = 0.1f;
+const float MOUSE_VELOCITY = 45.f;
+const float ZOOM           = 45.0f;
 
 class Camera
 {
@@ -100,7 +101,8 @@ class Camera
 
     void ProcessKeyboard(CameraMovement direction, float deltaTime)
     {
-        float velocity = MovementSpeed * deltaTime;
+        float velocity  = MovementSpeed * deltaTime;
+        float mouseDiff = MOUSE_VELOCITY * deltaTime;
         switch (direction)
         {
             case CameraMovement::FORWARD:
@@ -116,16 +118,16 @@ class Camera
                 Position += Right * velocity;
                 break;
             case CameraMovement::LOOKUP:
-                Pitch -= 0.05;
+                Pitch -= mouseDiff;
                 break;
             case CameraMovement::LOOKDOWN:
-                Pitch += 0.05;
+                Pitch += mouseDiff;
                 break;
             case CameraMovement::LOOKLEFT:
-                Yaw -= 0.05;
+                Yaw -= mouseDiff;
                 break;
             case CameraMovement::LOOKRIGHT:
-                Yaw += 0.05;
+                Yaw += mouseDiff;
                 break;
         }
 

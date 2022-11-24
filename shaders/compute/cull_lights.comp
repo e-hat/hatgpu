@@ -1,0 +1,125 @@
+#version 460 core
+
+layout (local_size_x = 1, local_size_y = 1) in;
+
+layout (set = 0, binding = 0) uniform CameraBuffer
+{
+    mat4 view;
+    mat4 proj;
+    mat4 viewproj;
+    vec3 position;
+} cameraData;
+
+struct PointLight
+{
+    vec3 position;
+    vec3 color;
+};
+// A big list of point lights in the scene
+layout (std140, set = 1, binding = 0) readonly buffer LightBuffer
+{
+    PointLight lights[];
+} lightBuffer;
+
+layout (std140, set = 1, binding = 1) uniform ClusteringInfo
+{
+    mat4 projInverse;
+    vec2 screenDimensions;
+// defines view frustrum
+    float zFar;
+    float zNear;
+    float scale;
+    float bias;
+
+// describing 2D tile dimensions
+    uint tileSizeX;
+    uint tileSizeY;
+
+    uint numZSlices;
+} clusteringInfo;
+
+struct LightGridEntry
+{
+    uint offset;
+    uint nLights;
+};
+layout (std430, set = 1, binding = 2) buffer LightGrid
+{
+    LightGridEntry lightGrid[];
+};
+
+layout (std430, set = 1, binding = 3) buffer LightIndicesBuffer
+{
+    uint globalLightIndices[];
+};
+
+struct Aabb
+{
+    vec3 minPt;
+    vec3 maxPt;
+};
+layout (std430, set = 1, binding = 4) readonly buffer AabbBuffer
+{
+    Aabb colliders[];
+};
+
+layout (std430, set = 1, binding = 5) buffer AtomicCounter
+{
+    uint globalActiveLights;
+};
+
+#define MAX_LIGHTS_PER_CLUSTER 500
+
+bool testSphereAabb(uint lightIdx, uint clusterIdx);
+float sqDistPointAabb(vec3 pt, uint clusterIdx);
+
+void main() {
+    uint clusterIdx = gl_WorkGroupID.x +
+        gl_WorkGroupID.y * gl_NumWorkGroups.x +
+        gl_WorkGroupID.z * gl_NumWorkGroups.y * gl_NumWorkGroups.x;
+
+    // accumulating colliding lights
+    uint nVisibleLights = 0;
+    uint visibleLightIndices[MAX_LIGHTS_PER_CLUSTER];
+    uint numLights = lightBuffer.lights.length();
+
+    for (uint lightIdx = 0; lightIdx < numLights && nVisibleLights < MAX_LIGHTS_PER_CLUSTER; ++lightIdx) {
+        if (testSphereAabb(lightIdx, clusterIdx)) {
+            visibleLightIndices[nVisibleLights++] = lightIdx;
+        }
+    }
+
+    uint offset = atomicAdd(globalActiveLights, nVisibleLights);
+    for (uint i = 0; i < nVisibleLights; ++i) {
+        globalLightIndices[offset + i] = visibleLightIndices[i];
+    }
+
+    lightGrid[clusterIdx].offset = offset;
+    lightGrid[clusterIdx].nLights  = nVisibleLights;
+}
+
+bool testSphereAabb(uint lightIdx, uint clusterIdx) {
+    // float radius = lightBuffer.lights[lightIdx].radius;
+    float radius = 15.f;
+    // translate light from world space to view space
+    vec3 center = vec3(cameraData.view * vec4(lightBuffer.lights[lightIdx].position.xyz, 1.0));
+    float sqDist = sqDistPointAabb(center, clusterIdx);
+
+    return sqDistPointAabb(center, clusterIdx) <= radius * radius;
+}
+
+float sqDistPointAabb(vec3 pt, uint clusterIdx) {
+    float sqDist = 0.0;
+    Aabb collider = colliders[clusterIdx];
+
+    for (uint i = 0; i < 3; ++i) {
+        if (pt[i] < collider.minPt[i]) {
+            sqDist += (collider.minPt[i] - pt[i]) * (collider.minPt[i] - pt[i]);
+        }
+        else if (pt[i] > collider.maxPt[i]) {
+            sqDist += (collider.maxPt[i] - pt[i]) * (collider.maxPt[i] - pt[i]);
+        }
+    }
+
+    return sqDist;
+}

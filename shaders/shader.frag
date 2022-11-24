@@ -134,7 +134,7 @@ void main()
         vec3 L = normalize(lightPosition - inWorldPos);
         vec3 H = normalize(V + L);
         float distance    = length(lightPosition - inWorldPos);
-        float attenuation = 1.0 / (distance * distance) * 10;
+        float attenuation = 1.0 / (distance * distance);
         vec3 radiance     = lightColor * attenuation;
 
         // cook-torrance brdf
@@ -160,6 +160,8 @@ void main()
 
     color = reinhardTonemap(color);
     color = gammaCorrection(color);
+
+    //color = mix(vec3(0.f), vec3(0.f, 1.f, 0.f), float(gridEntry.nLights) / 150);
 
     outColor = vec4(color, 1.0);
 }

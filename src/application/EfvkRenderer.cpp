@@ -2,6 +2,7 @@
 
 #include "EfvkRenderer.h"
 #include "initializers.h"
+#include "util/Random.h"
 
 #include <glm/gtx/string_cast.hpp>
 #include <tracy/Tracy.hpp>
@@ -58,8 +59,6 @@ struct GpuLightData
     glm::vec4 color;
 };
 
-static constexpr uint32_t kNumLights = 10;
-
 struct ClusteringInfo
 {
     glm::mat4 projInverse;
@@ -94,7 +93,9 @@ static constexpr uint32_t kNumTilesY   = 16;
 static constexpr uint32_t kNumSlicesZ  = 24;
 static constexpr uint32_t kNumClusters = kNumTilesX * kNumTilesY * kNumSlicesZ;
 
-static constexpr uint32_t kMaxLightsPerCluster = 10;
+static constexpr uint32_t kMaxLightsPerCluster = 500;
+
+static constexpr uint32_t kNumLights = 2048;
 }  // namespace
 
 EfvkRenderer::EfvkRenderer() : Application("Efvk Rendering Engine") {}
@@ -130,7 +131,7 @@ void EfvkRenderer::Exit() {}
 
 void EfvkRenderer::OnRender()
 {
-    recordCommandBuffer(mCurrentApplicationFrame->commandBuffer, mCurrentImageIndex);
+    recordCommandBuffer(mCurrentApplicationFrame->commandBuffer, mCurrentFrameIndex);
     ++mFrameCount;
 }
 void EfvkRenderer::OnImGuiRender() {}
@@ -213,7 +214,8 @@ void EfvkRenderer::createDescriptors()
     // Creating the global descriptor set, which contains camera info as well as all the object
     // transforms
     VkDescriptorSetLayoutBinding cameraBufferBinding = init::descriptorSetLayoutBinding(
-        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT,
+        0);
     VkDescriptorSetLayoutBinding objectBufferBinding = init::descriptorSetLayoutBinding(
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 1);
 
@@ -248,10 +250,12 @@ void EfvkRenderer::createDescriptors()
         VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT, 3);
     VkDescriptorSetLayoutBinding aabbBufferBinding = init::descriptorSetLayoutBinding(
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT, 4);
+    VkDescriptorSetLayoutBinding activeLightsBinding = init::descriptorSetLayoutBinding(
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT, 5);
 
-    std::array<VkDescriptorSetLayoutBinding, 5> clusteringBindings = {
-        lightBufferBinding, clusteringInfoBufferBinding, lightGridBufferBinding,
-        lightIndicesBufferBinding, aabbBufferBinding};
+    std::array<VkDescriptorSetLayoutBinding, 6> clusteringBindings = {
+        lightBufferBinding,        clusteringInfoBufferBinding, lightGridBufferBinding,
+        lightIndicesBufferBinding, aabbBufferBinding,           activeLightsBinding};
 
     VkDescriptorSetLayoutCreateInfo clusterCreateInfo{};
     clusterCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -312,7 +316,7 @@ void EfvkRenderer::createDescriptors()
         allocInfo.pSetLayouts = &mClusteringSetLayout;
         vkAllocateDescriptorSets(mDevice, &allocInfo, &mFrames[i].clusteringDescriptor);
 
-        // Allocate the light buffer
+        // Allocate the clustering info buffers
         mFrames[i].lightBuffer =
             createBuffer(sizeof(GpuLightData) * kNumLights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                          VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -325,6 +329,8 @@ void EfvkRenderer::createDescriptors()
         mFrames[i].lightIndicesBuffer =
             createBuffer(sizeof(uint32_t) * kNumClusters * kMaxLightsPerCluster,
                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        mFrames[i].activeLightsBuffer = createBuffer(
+            sizeof(uint32_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
         // Write the light buffer info
         VkDescriptorBufferInfo lightBufferInfo{};
@@ -371,9 +377,18 @@ void EfvkRenderer::createDescriptors()
         VkWriteDescriptorSet aabbBufferSetWrite = init::writeDescriptorBuffer(
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, mFrames[i].clusteringDescriptor, &aabbBufferInfo, 4);
 
-        std::array<VkWriteDescriptorSet, 7> writes = {
-            cameraSetWrite,    objSetWrite,          lightSetWrite,     clusteringSetWrite,
-            lightGridSetWrite, lightIndicesSetWrite, aabbBufferSetWrite};
+        VkDescriptorBufferInfo activeLightsBufferInfo{};
+        activeLightsBufferInfo.buffer = mFrames[i].activeLightsBuffer.buffer;
+        activeLightsBufferInfo.offset = 0;
+        activeLightsBufferInfo.range  = sizeof(uint32_t);
+
+        VkWriteDescriptorSet activeLightsSetWrite = init::writeDescriptorBuffer(
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, mFrames[i].clusteringDescriptor,
+            &activeLightsBufferInfo, 5);
+
+        std::array<VkWriteDescriptorSet, 8> writes = {
+            cameraSetWrite,    objSetWrite,          lightSetWrite,      clusteringSetWrite,
+            lightGridSetWrite, lightIndicesSetWrite, aabbBufferSetWrite, activeLightsSetWrite};
 
         vkUpdateDescriptorSets(mDevice, writes.size(), writes.data(), 0, nullptr);
     }
@@ -416,6 +431,8 @@ void EfvkRenderer::createDescriptors()
                              mFrames[i].lightGridBuffer.allocation);
             vmaDestroyBuffer(mAllocator, mFrames[i].lightIndicesBuffer.buffer,
                              mFrames[i].lightIndicesBuffer.allocation);
+            vmaDestroyBuffer(mAllocator, mFrames[i].activeLightsBuffer.buffer,
+                             mFrames[i].activeLightsBuffer.allocation);
         }
     });
 }
@@ -584,6 +601,45 @@ void EfvkRenderer::createComputePipelines()
     mDeleters.emplace_back([this]() { vkDestroyPipeline(mDevice, mAabbPipeline, nullptr); });
 
     vkDestroyShaderModule(mDevice, aabbModule, nullptr);
+
+    const auto cullLightsShader     = readFile("../shaders/bin/compute/cull_lights.comp.spv");
+    VkShaderModule cullLightsModule = createShaderModule(cullLightsShader);
+
+    VkPipelineShaderStageCreateInfo cullLightsStageInfo =
+        init::pipelineShaderStageInfo(VK_SHADER_STAGE_COMPUTE_BIT, cullLightsModule);
+
+    VkPipelineLayoutCreateInfo cullLightsLayoutInfo           = init::pipelineLayoutInfo();
+    cullLightsLayoutInfo.pushConstantRangeCount               = 0;
+    cullLightsLayoutInfo.pPushConstantRanges                  = nullptr;
+    std::array<VkDescriptorSetLayout, 2> cullLightsSetLayouts = {mGlobalSetLayout,
+                                                                 mClusteringSetLayout};
+    cullLightsLayoutInfo.setLayoutCount                       = cullLightsSetLayouts.size();
+    cullLightsLayoutInfo.pSetLayouts                          = cullLightsSetLayouts.data();
+
+    if (vkCreatePipelineLayout(mDevice, &cullLightsLayoutInfo, nullptr, &mLightCullLayout) !=
+        VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create layout for light culling pipeline");
+    }
+
+    mDeleters.emplace_back(
+        [this]() { vkDestroyPipelineLayout(mDevice, mLightCullLayout, nullptr); });
+
+    VkComputePipelineCreateInfo cullLightsPipelineInfo{};
+    cullLightsPipelineInfo.sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    cullLightsPipelineInfo.pNext  = nullptr;
+    cullLightsPipelineInfo.layout = mLightCullLayout;
+    cullLightsPipelineInfo.stage  = cullLightsStageInfo;
+
+    if (vkCreateComputePipelines(mDevice, VK_NULL_HANDLE, 1, &cullLightsPipelineInfo, nullptr,
+                                 &mLightCullPipeline) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create light culling pipeline");
+    }
+
+    mDeleters.emplace_back([this]() { vkDestroyPipeline(mDevice, mLightCullPipeline, nullptr); });
+
+    vkDestroyShaderModule(mDevice, cullLightsModule, nullptr);
 }
 
 void EfvkRenderer::createUploadContext()
@@ -1089,11 +1145,17 @@ void EfvkRenderer::createScene()
             vkDestroyImageView(mDevice, texture.imageView, nullptr);
         }
     });
-    mPointLights = {{glm::vec3(-6.f, -5.f, 0.0f)}, {glm::vec3(-5.f, -3.f, 0.f)},
-                    {glm::vec3(-4.f, -5.f, -0.f)}, {glm::vec3(-3.f, -3.f, -0.f)},
-                    {glm::vec3(-1.f, -5.f, -0.f)}, {glm::vec3(1.f, -3.f, 0.f)},
-                    {glm::vec3(3.f, -5.f, 0.f)},   {glm::vec3(0.f, -2.5f, 0.5f)},
-                    {glm::vec3(5.5f, -3.f, 0.5f)}, {glm::vec3(2.157111, -0.254994, -0.576244)}};
+
+    constexpr std::array<glm::vec3, 3> lightColors = {
+        glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)};
+    for (size_t i = 0; i < kNumLights; ++i)
+    {
+        PointLight p;
+        p.color    = lightColors[i % lightColors.size()];
+        p.position = Random::GetRandomInRange<glm::vec3>(
+            glm::vec3(-12.807062, -0.267041, -5.550981), glm::vec3(12.947023, -6.934890, 6.185148));
+        mPointLights.push_back(p);
+    }
 
     void *data;
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
@@ -1114,26 +1176,6 @@ void EfvkRenderer::createScene()
         std::memcpy(data, &clusteringInfo, sizeof(ClusteringInfo));
 
         vmaUnmapMemory(mAllocator, mFrames[i].clusteringInfoBuffer.allocation);
-
-        vmaMapMemory(mAllocator, mFrames[i].lightGridBuffer.allocation, &data);
-        auto entries = static_cast<LightGridEntry *>(data);
-        for (size_t clusterIdx = 0; clusterIdx < kNumClusters; ++clusterIdx)
-        {
-            entries[clusterIdx].nLights = kNumLights;
-            entries[clusterIdx].offset  = clusterIdx * kNumLights;
-        }
-        vmaUnmapMemory(mAllocator, mFrames[i].lightGridBuffer.allocation);
-
-        vmaMapMemory(mAllocator, mFrames[i].lightIndicesBuffer.allocation, &data);
-        auto indices = static_cast<uint32_t *>(data);
-        for (size_t gridIndex = 0; gridIndex < kNumClusters; ++gridIndex)
-        {
-            for (size_t offset = 0; offset < kNumLights; ++offset)
-            {
-                indices[gridIndex * kNumLights + offset] = offset;
-            }
-        }
-        vmaUnmapMemory(mAllocator, mFrames[i].lightIndicesBuffer.allocation);
     }
 }
 
@@ -1160,7 +1202,7 @@ void EfvkRenderer::generateAabb()
         barrierInfo.offset              = 0;
         barrierInfo.size                = VK_WHOLE_SIZE;
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 1, &barrierInfo,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 1, &barrierInfo,
                              0, nullptr);
     });
 }
@@ -1207,14 +1249,43 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
             lightBufferData[i].color    = glm::vec4(mPointLights[i].color, 0.f);
         }
         vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].lightBuffer.allocation);
-
-        std::array<VkDescriptorSet, 2> descriptorSets = {
-            mFrames[mCurrentFrameIndex].globalDescriptor,
-            mFrames[mCurrentFrameIndex].clusteringDescriptor};
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                mGraphicsPipelineLayout, 0, descriptorSets.size(),
-                                descriptorSets.data(), 0, nullptr);
     }
+
+    cullLights(commandBuffer, mCurrentFrameIndex);
+
+    VkRenderPassBeginInfo renderPassInfo = init::renderPassBeginInfo(
+        mRenderPass, mSwapchainExtent, mSwapchainFramebuffers[mCurrentImageIndex]);
+
+    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    VkClearValue depthClear{};
+    depthClear.depthStencil.depth           = 1.f;
+    std::array<VkClearValue, 2> clearValues = {clearColor, depthClear};
+    renderPassInfo.clearValueCount          = static_cast<uint32_t>(clearValues.size());
+    renderPassInfo.pClearValues             = clearValues.data();
+
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mGraphicsPipeline);
+
+    std::array<VkDescriptorSet, 2> descriptorSets = {
+        mFrames[mCurrentFrameIndex].globalDescriptor,
+        mFrames[mCurrentFrameIndex].clusteringDescriptor};
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mGraphicsPipelineLayout,
+                            0, descriptorSets.size(), descriptorSets.data(), 0, nullptr);
+
+    VkViewport viewport{};
+    viewport.x        = 0.0f;
+    viewport.y        = 0.0f;
+    viewport.width    = static_cast<float>(mSwapchainExtent.width);
+    viewport.height   = static_cast<float>(mSwapchainExtent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = mSwapchainExtent;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     for (const auto &object : mRenderables)
     {
@@ -1239,43 +1310,65 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
             vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
         }
     }
+
+    vkCmdEndRenderPass(commandBuffer);
 }
 
-void EfvkRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex)
+void EfvkRenderer::cullLights(VkCommandBuffer cmd, uint32_t imageIndex)
+{
+    ZoneScopedC(tracy::Color::Cornsilk);
+    TracyVkZoneC(mCurrentApplicationFrame->tracyContext, cmd, "Light culling",
+                 tracy::Color::DarkViolet);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, mLightCullPipeline);
+
+    void *data;
+    vmaMapMemory(mAllocator, mFrames[imageIndex].activeLightsBuffer.allocation, &data);
+    auto counterPtr = static_cast<uint32_t *>(data);
+    *counterPtr     = 0;
+    vmaUnmapMemory(mAllocator, mFrames[imageIndex].activeLightsBuffer.allocation);
+
+    std::array<VkDescriptorSet, 2> descriptorSets = {mFrames[imageIndex].globalDescriptor,
+                                                     mFrames[imageIndex].clusteringDescriptor};
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, mLightCullLayout, 0,
+                            descriptorSets.size(), descriptorSets.data(), 0, nullptr);
+
+    vkCmdDispatch(cmd, kNumTilesX, kNumTilesY, kNumSlicesZ);
+
+    VkBufferMemoryBarrier lightGridBarrier;
+    lightGridBarrier.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    lightGridBarrier.pNext               = nullptr;
+    lightGridBarrier.srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
+    lightGridBarrier.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+    lightGridBarrier.srcQueueFamilyIndex = mGraphicsQueueIndex;
+    lightGridBarrier.dstQueueFamilyIndex = mGraphicsQueueIndex;
+    lightGridBarrier.buffer              = mFrames[imageIndex].lightGridBuffer.buffer;
+    lightGridBarrier.offset              = 0;
+    lightGridBarrier.size                = VK_WHOLE_SIZE;
+
+    VkBufferMemoryBarrier lightIndicesBarrier;
+    lightIndicesBarrier.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    lightIndicesBarrier.pNext               = nullptr;
+    lightIndicesBarrier.srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
+    lightIndicesBarrier.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+    lightIndicesBarrier.srcQueueFamilyIndex = mGraphicsQueueIndex;
+    lightIndicesBarrier.dstQueueFamilyIndex = mGraphicsQueueIndex;
+    lightIndicesBarrier.buffer              = mFrames[imageIndex].lightIndicesBuffer.buffer;
+    lightIndicesBarrier.offset              = 0;
+    lightIndicesBarrier.size                = VK_WHOLE_SIZE;
+
+    std::array<VkBufferMemoryBarrier, 2> barriers = {lightGridBarrier, lightIndicesBarrier};
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, barriers.size(),
+                         barriers.data(), 0, nullptr);
+}
+
+void EfvkRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer,
+                                       [[maybe_unused]] uint32_t imageIndex)
 {
     ZoneScopedC(tracy::Color::PeachPuff);
 
-    VkRenderPassBeginInfo renderPassInfo = init::renderPassBeginInfo(
-        mRenderPass, mSwapchainExtent, mSwapchainFramebuffers[imageIndex]);
-
-    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-    VkClearValue depthClear{};
-    depthClear.depthStencil.depth           = 1.f;
-    std::array<VkClearValue, 2> clearValues = {clearColor, depthClear};
-    renderPassInfo.clearValueCount          = static_cast<uint32_t>(clearValues.size());
-    renderPassInfo.pClearValues             = clearValues.data();
-
-    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mGraphicsPipeline);
-
-    VkViewport viewport{};
-    viewport.x        = 0.0f;
-    viewport.y        = 0.0f;
-    viewport.width    = static_cast<float>(mSwapchainExtent.width);
-    viewport.height   = static_cast<float>(mSwapchainExtent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = mSwapchainExtent;
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
     drawObjects(commandBuffer);
-
-    vkCmdEndRenderPass(commandBuffer);
 }
 
 EfvkRenderer::~EfvkRenderer()
