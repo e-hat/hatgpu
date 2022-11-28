@@ -19,8 +19,8 @@ namespace efvk
 {
 namespace
 {
-constexpr int kWidth  = 1080;
-constexpr int kHeight = 920;
+constexpr int kWidth  = 1366;
+constexpr int kHeight = 768;
 
 const std::vector<const char *> kValidationLayers = {"VK_LAYER_KHRONOS_validation"};
 constexpr bool kEnableValidationLayers =

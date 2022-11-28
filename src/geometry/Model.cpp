@@ -36,9 +36,10 @@ std::vector<std::string> loadMaterialTextures(aiMaterial *mat,
 void Model::loadFromObj(const std::string &filename, TextureManager &manager)
 {
     Assimp::Importer importer;
-    const aiScene *scene = importer.ReadFile(
-        filename, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_OptimizeMeshes |
-                      aiProcess_OptimizeGraph | aiProcess_ForceGenNormals);
+    const aiScene *scene =
+        importer.ReadFile(filename, aiProcess_Triangulate | aiProcess_FlipUVs |
+                                        aiProcess_OptimizeMeshes | aiProcess_OptimizeGraph |
+                                        aiProcess_ForceGenNormals | aiProcess_FlipWindingOrder);
 
     if (scene == nullptr || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE ||
         scene->mRootNode == nullptr)
@@ -73,8 +74,8 @@ void Model::processNode(aiNode *node, const aiScene *scene, TextureManager &mana
 
             glm::vec3 &normal = v.normal;
             normal.x          = mesh->mNormals[j].x;
-            normal.y          = -mesh->mNormals[j].y;
-            normal.z          = -mesh->mNormals[j].z;
+            normal.y          = mesh->mNormals[j].y;
+            normal.z          = mesh->mNormals[j].z;
 
             glm::vec2 &uv = v.uv;
             uv.x          = mesh->mTextureCoords[0][j].x;

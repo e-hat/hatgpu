@@ -32,8 +32,8 @@ layout (std140, set = 1, binding = 1) uniform ClusteringInfo
     float bias;
 
 // describing 2D tile dimensions
-    uint tileSizeX;
-    uint tileSizeY;
+    float tileSizeX;
+    float tileSizeY;
 
     uint numZSlices;
 } clusteringInfo;
@@ -68,12 +68,12 @@ layout (std430, set = 1, binding = 5) buffer AtomicCounter
     uint globalActiveLights;
 };
 
-#define MAX_LIGHTS_PER_CLUSTER 500
+#define MAX_LIGHTS_PER_CLUSTER 65
 
 bool testSphereAabb(uint lightIdx, uint clusterIdx);
 float sqDistPointAabb(vec3 pt, uint clusterIdx);
-
 void main() {
+    // One invocation per cluster
     uint clusterIdx = gl_WorkGroupID.x +
         gl_WorkGroupID.y * gl_NumWorkGroups.x +
         gl_WorkGroupID.z * gl_NumWorkGroups.y * gl_NumWorkGroups.x;
@@ -83,29 +83,34 @@ void main() {
     uint visibleLightIndices[MAX_LIGHTS_PER_CLUSTER];
     uint numLights = lightBuffer.lights.length();
 
+    // Go through every light and check if it collides this cluster
     for (uint lightIdx = 0; lightIdx < numLights && nVisibleLights < MAX_LIGHTS_PER_CLUSTER; ++lightIdx) {
         if (testSphereAabb(lightIdx, clusterIdx)) {
+            // If we do collide, add the light index to the list we are keeping track of
             visibleLightIndices[nVisibleLights++] = lightIdx;
         }
     }
 
+    // Write the light list for this cluster to the global light index list
+    // and atomically increment the global count of lights indices
     uint offset = atomicAdd(globalActiveLights, nVisibleLights);
     for (uint i = 0; i < nVisibleLights; ++i) {
         globalLightIndices[offset + i] = visibleLightIndices[i];
     }
 
+    // Save the offset and number of lights in this cluster's light grid entry
     lightGrid[clusterIdx].offset = offset;
     lightGrid[clusterIdx].nLights  = nVisibleLights;
 }
 
 bool testSphereAabb(uint lightIdx, uint clusterIdx) {
-    // float radius = lightBuffer.lights[lightIdx].radius;
-    float radius = 15.f;
+    // Tested and found this was the optimal radius. I will change this later to be decided by the properties of the light.
+    float radius = 8.f;
     // translate light from world space to view space
     vec3 center = vec3(cameraData.view * vec4(lightBuffer.lights[lightIdx].position.xyz, 1.0));
     float sqDist = sqDistPointAabb(center, clusterIdx);
 
-    return sqDistPointAabb(center, clusterIdx) <= radius * radius;
+    return sqDist <= radius * radius;
 }
 
 float sqDistPointAabb(vec3 pt, uint clusterIdx) {

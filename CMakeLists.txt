@@ -67,6 +67,6 @@ target_precompile_headers(efvk PRIVATE ${SOURCE_DIR}/efpch.h)
 
 # target_compile_definitions(efvk PRIVATE DEBUG VALIDATION_DEBUG_BREAK)
 target_compile_definitions(efvk PRIVATE DEBUG)
-target_compile_definitions(efvk PUBLIC TRACY_ENABLE)
+target_compile_definitions(efvk PUBLIC TRACY_ENABLE GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
 target_compile_options(efvk PRIVATE -Werror -Wall -Wextra)

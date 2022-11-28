@@ -20,7 +20,7 @@ enum class CameraMovement
 
 const float YAW            = -90.0f;
 const float PITCH          = 0.0f;
-const float SPEED          = 2.5F;
+const float SPEED          = 10.F;
 const float SENSITIVITY    = 0.1f;
 const float MOUSE_VELOCITY = 45.f;
 const float ZOOM           = 45.0f;
@@ -47,14 +47,14 @@ class Camera
     float MouseSensitivity;
     float Zoom;
 
-    Camera(int screenWidth    = 1080,
-           int screenHeight   = 920,
+    Camera(int screenWidth    = 1366,
+           int screenHeight   = 768,
            glm::vec3 position = glm::vec3(0.0f, 0.0f, 0.0f),
            glm::vec3 up       = glm::vec3(0.0f, 1.0f, 0.0f),
            float yaw          = YAW,
            float pitch        = PITCH,
            float near         = 0.1f,
-           float far          = 200.0f)
+           float far          = 200.f)
         : Front(glm::vec3(0.0f, 0.0f, -1.0f)),
           Near(near),
           Far(far),
@@ -95,8 +95,10 @@ class Camera
 
     inline glm::mat4 GetProjectionMatrix() const
     {
-        return glm::perspective(glm::radians(Zoom), (float)ScreenWidth / (float)ScreenHeight, Near,
-                                Far);
+        auto result = glm::perspective(glm::radians(Zoom), (float)ScreenWidth / (float)ScreenHeight,
+                                       Near, Far);
+        result[1][1] *= -1;
+        return result;
     }
 
     void ProcessKeyboard(CameraMovement direction, float deltaTime)
@@ -118,10 +120,10 @@ class Camera
                 Position += Right * velocity;
                 break;
             case CameraMovement::LOOKUP:
-                Pitch -= mouseDiff;
+                Pitch += mouseDiff;
                 break;
             case CameraMovement::LOOKDOWN:
-                Pitch += mouseDiff;
+                Pitch -= mouseDiff;
                 break;
             case CameraMovement::LOOKLEFT:
                 Yaw -= mouseDiff;

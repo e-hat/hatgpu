@@ -7,6 +7,13 @@ layout(location = 3) in vec3 inCameraPos;
 
 layout(location = 0) out vec4 outColor;
 
+layout (set = 0, binding = 0) uniform CameraBuffer{
+    mat4 view;
+    mat4 proj;
+    mat4 viewproj;
+    vec3 position;
+} cameraData;
+
 struct PointLight
 {
     vec3 position;
@@ -29,8 +36,8 @@ layout (std140, set = 1, binding = 1) uniform ClusteringInfo
     float bias;
 
 // describing 2D tile dimensions
-    uint tileSizeX;
-    uint tileSizeY;
+    float tileSizeX;
+    float tileSizeY;
 
     uint numZSlices;
 } clusteringInfo;
@@ -67,16 +74,14 @@ const float PI = 3.14159265359;
 const float gamma = 1.8;
 const float exposure = 1.0;
 
-#define N_LIGHTS 10
-
 void main()
 {
-    vec3 albedo = texture(albedoTexture, inTexCoord).rgb;
+    vec4 albedoRgba = texture(albedoTexture, inTexCoord);
+    vec3 albedo = albedoRgba.rgb;
+    float alpha = albedoRgba.a;
     vec2 metalnessRoughnessCombined = texture(metalnessRoughnessTexture, inTexCoord).rg;
     float metalness = metalnessRoughnessCombined.x;
     float roughness = metalnessRoughnessCombined.y;
-
-    if (texture(albedoTexture, inTexCoord).a < 0.5) discard;
 
     // DIRECTIONAL LIGHT
     vec3 N = normalize(inNormal);
@@ -85,23 +90,22 @@ void main()
     vec3 F0 = vec3(0.04);
     F0 = mix(F0, albedo, metalness);
 
-
     vec3 lightColor = vec3(1.0f);
 
     // reflectance equation
     vec3 Lo = vec3(0.0);
 
     //Variables common to BRDFs
-    vec3 lightDir = normalize(-vec3(0.5, 1.0, 0.2));
+    vec3 lightDir = normalize(vec3(0.5, 1.0, 0.2));
     vec3 halfway  = normalize(lightDir + V);
     float nDotV = max(dot(N, V), 0.0);
     float nDotL = max(dot(N, lightDir), 0.0);
-    vec3 radianceIn = vec3(1.);
+    vec3 radianceIn = vec3(3.);
 
     //Cook-Torrance BRDF
     float NDF = DistributionGGX(N, halfway, roughness);
     float G   = GeometrySmith(N, V, lightDir, roughness);
-    vec3  F   = fresnelSchlick(max(dot(halfway,V), 0.0), F0);
+    vec3  F   = fresnelSchlick(max(dot(halfway, V), 0.0), F0);
 
     //Finding specular and diffuse component
     vec3 kS = F;
@@ -115,8 +119,10 @@ void main()
     Lo += (kD * (albedo / PI) + specular ) * radianceIn * nDotL;
 
     // POINT LIGHTS
-    uvec2 tileDims = uvec2(clusteringInfo.screenDimensions / vec2(clusteringInfo.tileSizeX, clusteringInfo.tileSizeY));
+    uvec2 tileDims = uvec2(round(clusteringInfo.screenDimensions.x / clusteringInfo.tileSizeX), round(clusteringInfo.screenDimensions.y / clusteringInfo.tileSizeY));
+    // https://www.desmos.com/calculator/emymzqic5a
     uint zIndex = uint(max(log2(linearDepth(gl_FragCoord.z)) * clusteringInfo.scale + clusteringInfo.bias, 0.0));
+
     uvec3 cluster = uvec3(uvec2(gl_FragCoord.xy / vec2(clusteringInfo.tileSizeX, clusteringInfo.tileSizeY)), zIndex);
 
     uint clusterIdx = cluster.x +
@@ -134,7 +140,7 @@ void main()
         vec3 L = normalize(lightPosition - inWorldPos);
         vec3 H = normalize(V + L);
         float distance    = length(lightPosition - inWorldPos);
-        float attenuation = 1.0 / (distance * distance);
+        float attenuation = 1.f / (distance * distance) * 5.f;
         vec3 radiance     = lightColor * attenuation;
 
         // cook-torrance brdf
@@ -155,15 +161,13 @@ void main()
         Lo += (kD * albedo / PI + specular) * radiance * NdotL;
     }
 
-    vec3 ambient = vec3(0.00001) * albedo;
+    vec3 ambient = vec3(0.1) * albedo;
     vec3 color = ambient + Lo;
 
     color = reinhardTonemap(color);
     color = gammaCorrection(color);
 
-    //color = mix(vec3(0.f), vec3(0.f, 1.f, 0.f), float(gridEntry.nLights) / 150);
-
-    outColor = vec4(color, 1.0);
+    outColor = vec4(color, alpha);
 }
 
 vec3 fresnelSchlick(float cosTheta, vec3 F0)
@@ -177,7 +181,6 @@ float DistributionGGX(vec3 N, vec3 H, float roughness)
     float a2     = a*a;
     float NdotH  = max(dot(N, H), 0.0);
     float NdotH2 = NdotH*NdotH;
-
     float num   = a2;
     float denom = (NdotH2 * (a2 - 1.0) + 1.0);
     denom = PI * denom * denom;
@@ -215,8 +218,7 @@ vec3 gammaCorrection(vec3 v) {
 }
 
 float linearDepth(float depthSample) {
-    float depthRange = 2.0 * depthSample - 1.0;
-    float linear = 2.0 * clusteringInfo.zNear * clusteringInfo.zFar / (clusteringInfo.zFar +
-        clusteringInfo.zNear - depthRange * (clusteringInfo.zFar - clusteringInfo.zNear));
+    depthSample = depthSample * 2 - 1.f;
+    float linear = 2 * clusteringInfo.zNear * clusteringInfo.zFar / (clusteringInfo.zFar + clusteringInfo.zNear - depthSample * (clusteringInfo.zFar - clusteringInfo.zNear));
     return linear;
 }
