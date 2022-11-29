@@ -1,0 +1,21 @@
+{
+  "models": [
+    {
+      "path": "../assets/sponza-gltf/Sponza.gltf",
+      "transform": {
+        "scale": [0.05, 0.05, 0.05]
+      }
+    }
+  ],
+  "lights": {
+    "random": true,
+    "rangeMin": [-70.0, 0.0, -30.0],
+    "rangeMax": [60.0, 40.0, 25.0],
+    "colors": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+    "count": 1024,
+    "dirLight": {
+      "direction": [0.5, 1.0, 0.2],
+      "color": [1.0, 1.0, 1.0]
+    }
+  }
+}

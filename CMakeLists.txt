@@ -27,7 +27,7 @@ set(SOURCES ${SOURCES} ${SOURCE_DIR}/main.cpp
         ${SOURCE_DIR}/geometry/Model.cpp
         ${SOURCE_DIR}/geometry/Model.h
         ${SOURCE_DIR}/initializers.h
-        ${SOURCE_DIR}/initializers.cpp src/util/Random.h)
+        ${SOURCE_DIR}/initializers.cpp src/util/Random.h src/scene/Scene.h src/scene/Scene.cpp)
 add_executable(efvk ${SOURCES})
 
 set(INCLUDES ${SOURCE_DIR})
@@ -38,7 +38,8 @@ set(INCLUDES ${INCLUDES}
         ${DEPS}/imgui
         ${DEPS}/stb
         ${DEPS}/VulkanMemoryAllocator/include
-        ${DEPS}/tracy/public)
+        ${DEPS}/tracy/public
+        ${DEPS}/json/include)
 target_include_directories(efvk PRIVATE ${INCLUDES})
 
 add_subdirectory(deps/assimp)
@@ -58,6 +59,10 @@ target_link_libraries(efvk PRIVATE VulkanMemoryAllocator)
 
 add_subdirectory(deps/tracy)
 target_link_libraries(efvk PUBLIC Tracy::TracyClient)
+
+set(JSON_BuildTests OFF CACHE INTERNAL "")
+add_subdirectory(deps/json)
+target_link_libraries(efvk PRIVATE nlohmann_json::nlohmann_json)
 
 find_package(Vulkan REQUIRED)
 target_link_libraries(efvk PRIVATE ${Vulkan_LIBRARIES})
