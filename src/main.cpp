@@ -4,7 +4,7 @@
 
 int main()
 {
-    efvk::EfvkRenderer app;
+    efvk::EfvkRenderer app("../scenes/clustered_demo.json");
     app.Run();
 
     return 0;

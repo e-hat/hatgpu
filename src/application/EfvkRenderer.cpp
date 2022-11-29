@@ -53,9 +53,15 @@ struct GpuObjectData
     glm::mat4 modelTransform;
 };
 
-struct GpuLightData
+struct GpuPointLight
 {
     glm::vec4 position;
+    glm::vec4 color;
+};
+
+struct GpuDirLight
+{
+    glm::vec4 direction;
     glm::vec4 color;
 };
 
@@ -94,11 +100,11 @@ static constexpr uint32_t kNumSlicesZ  = 24;
 static constexpr uint32_t kNumClusters = kNumTilesX * kNumTilesY * kNumSlicesZ;
 
 static constexpr uint32_t kMaxLightsPerCluster = 65;
-
-static constexpr uint32_t kNumLights = 2048;
 }  // namespace
 
-EfvkRenderer::EfvkRenderer() : Application("Efvk Rendering Engine") {}
+EfvkRenderer::EfvkRenderer(const std::string &scenePath)
+    : Application("Efvk Rendering Engine"), mScenePath(scenePath)
+{}
 
 void EfvkRenderer::Init()
 {
@@ -117,13 +123,13 @@ void EfvkRenderer::Init()
     createUploadContext();
     createDepthImage();
     createRenderPass();
+    loadSceneFromDisk();
     createDescriptors();
     createGraphicsPipeline();
     createComputePipelines();
     createFramebuffers(mRenderPass);
 
-    createScene();
-
+    uploadSceneToGpu();
     generateAabb();
 }
 
@@ -218,9 +224,11 @@ void EfvkRenderer::createDescriptors()
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT, 0);
     VkDescriptorSetLayoutBinding objectBufferBinding = init::descriptorSetLayoutBinding(
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 1);
+    VkDescriptorSetLayoutBinding dirLightBufferBinding = init::descriptorSetLayoutBinding(
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
 
-    std::array<VkDescriptorSetLayoutBinding, 2> layoutBindings = {cameraBufferBinding,
-                                                                  objectBufferBinding};
+    std::array<VkDescriptorSetLayoutBinding, 3> layoutBindings = {
+        cameraBufferBinding, objectBufferBinding, dirLightBufferBinding};
 
     VkDescriptorSetLayoutCreateInfo globalCreateInfo{};
     globalCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -280,9 +288,10 @@ void EfvkRenderer::createDescriptors()
         mFrames[i].objectBuffer =
             createBuffer(sizeof(GpuObjectData) * kMaxObjects, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                          VMA_MEMORY_USAGE_CPU_TO_GPU);
-
         mFrames[i].cameraBuffer = createBuffer(
             sizeof(GpuCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        mFrames[i].dirLightBuffer = createBuffer(
+            sizeof(GpuDirLight), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
         // Create this descriptor set
         VkDescriptorSetAllocateInfo allocInfo{};
@@ -298,7 +307,7 @@ void EfvkRenderer::createDescriptors()
         VkDescriptorBufferInfo cameraBufferInfo{};
         cameraBufferInfo.buffer = mFrames[i].cameraBuffer.buffer;
         cameraBufferInfo.offset = 0;
-        cameraBufferInfo.range  = sizeof(GpuCameraData);
+        cameraBufferInfo.range  = VK_WHOLE_SIZE;
 
         VkWriteDescriptorSet cameraSetWrite = init::writeDescriptorBuffer(
             VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, mFrames[i].globalDescriptor, &cameraBufferInfo, 0);
@@ -307,19 +316,28 @@ void EfvkRenderer::createDescriptors()
         VkDescriptorBufferInfo objBufferInfo{};
         objBufferInfo.buffer = mFrames[i].objectBuffer.buffer;
         objBufferInfo.offset = 0;
-        objBufferInfo.range  = sizeof(GpuObjectData) * kMaxObjects;
+        objBufferInfo.range  = VK_WHOLE_SIZE;
 
         VkWriteDescriptorSet objSetWrite = init::writeDescriptorBuffer(
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, mFrames[i].globalDescriptor, &objBufferInfo, 1);
+
+        // Use GpuDirLight for the third binding
+        VkDescriptorBufferInfo dirLightBufferInfo{};
+        dirLightBufferInfo.buffer = mFrames[i].dirLightBuffer.buffer;
+        dirLightBufferInfo.offset = 0;
+        dirLightBufferInfo.range  = VK_WHOLE_SIZE;
+
+        VkWriteDescriptorSet dirLightSetWrite = init::writeDescriptorBuffer(
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, mFrames[i].globalDescriptor, &dirLightBufferInfo, 2);
 
         // Allocate the clustering info descriptor set
         allocInfo.pSetLayouts = &mClusteringSetLayout;
         vkAllocateDescriptorSets(mDevice, &allocInfo, &mFrames[i].clusteringDescriptor);
 
         // Allocate the clustering info buffers
-        static constexpr size_t kLightBufferSize = sizeof(GpuLightData) * kNumLights;
-        mFrames[i].lightBuffer = createBuffer(kLightBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                              VMA_MEMORY_USAGE_CPU_TO_GPU);
+        size_t kLightBufferSize = sizeof(GpuPointLight) * mScene.pointLights.size();
+        mFrames[i].lightBuffer  = createBuffer(kLightBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                               VMA_MEMORY_USAGE_CPU_TO_GPU);
         static constexpr size_t kClusteringInfoBufferSize = sizeof(ClusteringInfo);
         mFrames[i].clusteringInfoBuffer =
             createBuffer(kClusteringInfoBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -391,9 +409,10 @@ void EfvkRenderer::createDescriptors()
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, mFrames[i].clusteringDescriptor,
             &activeLightsBufferInfo, 5);
 
-        std::array<VkWriteDescriptorSet, 8> writes = {
-            cameraSetWrite,    objSetWrite,          lightSetWrite,      clusteringSetWrite,
-            lightGridSetWrite, lightIndicesSetWrite, aabbBufferSetWrite, activeLightsSetWrite};
+        std::array<VkWriteDescriptorSet, 9> writes = {
+            cameraSetWrite,       objSetWrite,        dirLightSetWrite,
+            lightSetWrite,        clusteringSetWrite, lightGridSetWrite,
+            lightIndicesSetWrite, aabbBufferSetWrite, activeLightsSetWrite};
 
         vkUpdateDescriptorSets(mDevice, writes.size(), writes.data(), 0, nullptr);
     }
@@ -428,6 +447,8 @@ void EfvkRenderer::createDescriptors()
                              mFrames[i].objectBuffer.allocation);
             vmaDestroyBuffer(mAllocator, mFrames[i].cameraBuffer.buffer,
                              mFrames[i].cameraBuffer.allocation);
+            vmaDestroyBuffer(mAllocator, mFrames[i].dirLightBuffer.buffer,
+                             mFrames[i].dirLightBuffer.allocation);
             vmaDestroyBuffer(mAllocator, mFrames[i].lightBuffer.buffer,
                              mFrames[i].lightBuffer.allocation);
             vmaDestroyBuffer(mAllocator, mFrames[i].clusteringInfoBuffer.buffer,
@@ -1126,21 +1147,21 @@ void EfvkRenderer::uploadTextures(Mesh &mesh)
     }
 }
 
-void EfvkRenderer::createScene()
+void EfvkRenderer::loadSceneFromDisk()
 {
-    RenderObject sponza;
-    sponza.model = std::make_shared<Model>();
-    sponza.model->loadFromObj("../assets/sponza-gltf/Sponza.gltf", mTextureManager);
+    mScene.loadFromJson(mScenePath, mTextureManager);
+}
 
-    for (auto &mesh : sponza.model->meshes)
+void EfvkRenderer::uploadSceneToGpu()
+{
+    for (auto &renderable : mScene.renderables)
     {
-        uploadMesh(mesh);
-        uploadTextures(mesh);
+        for (auto &mesh : renderable.model->meshes)
+        {
+            uploadMesh(mesh);
+            uploadTextures(mesh);
+        }
     }
-
-    auto scale       = glm::scale(glm::mat4(1.f), glm::vec3(0.05f));
-    sponza.transform = scale;
-    mRenderables.push_back(sponza);
 
     mDeleters.emplace_back([this]() {
         for (const auto &[_, texture] : mGpuTextures)
@@ -1148,17 +1169,6 @@ void EfvkRenderer::createScene()
             vkDestroyImageView(mDevice, texture.imageView, nullptr);
         }
     });
-
-    constexpr std::array<glm::vec3, 3> lightColors = {
-        glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)};
-    for (size_t i = 0; i < kNumLights; ++i)
-    {
-        PointLight p;
-        p.color    = lightColors[i % lightColors.size()];
-        p.position = Random::GetRandomInRange<glm::vec3>(glm::vec3(-70.f, 0.f, -30.f),
-                                                         glm::vec3(60.f, 40.f, 25.f));
-        mPointLights.push_back(p);
-    }
 
     void *data;
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
@@ -1237,19 +1247,26 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
         // Writing all of the object transforms
         vmaMapMemory(mAllocator, mFrames[mCurrentFrameIndex].objectBuffer.allocation, &data);
         auto objectData = static_cast<GpuObjectData *>(data);
-        for (size_t i = 0; i < mRenderables.size(); ++i)
+        for (size_t i = 0; i < mScene.renderables.size(); ++i)
         {
-            objectData[i].modelTransform = mRenderables[i].transform;
+            objectData[i].modelTransform = mScene.renderables[i].transform;
         }
         vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].objectBuffer.allocation);
 
+        // Writing the dir light
+        vmaMapMemory(mAllocator, mFrames[mCurrentFrameIndex].dirLightBuffer.allocation, &data);
+        auto dirLightData       = static_cast<GpuDirLight *>(data);
+        dirLightData->direction = glm::vec4(mScene.dirLight.direction, 0.f);
+        dirLightData->color     = glm::vec4(mScene.dirLight.color, 0.f);
+        vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].dirLightBuffer.allocation);
+
         // Writing the lights to the light buffer
         vmaMapMemory(mAllocator, mFrames[mCurrentFrameIndex].lightBuffer.allocation, &data);
-        auto lightBufferData = static_cast<GpuLightData *>(data);
-        for (size_t i = 0; i < kNumLights; ++i)
+        auto lightBufferData = static_cast<GpuPointLight *>(data);
+        for (size_t i = 0; i < mScene.pointLights.size(); ++i)
         {
-            lightBufferData[i].position = glm::vec4(mPointLights[i].position, 0.f);
-            lightBufferData[i].color    = glm::vec4(mPointLights[i].color, 0.f);
+            lightBufferData[i].position = glm::vec4(mScene.pointLights[i].position, 0.f);
+            lightBufferData[i].color    = glm::vec4(mScene.pointLights[i].color, 0.f);
         }
         vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].lightBuffer.allocation);
     }
@@ -1295,7 +1312,7 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
     }
 
-    for (const auto &object : mRenderables)
+    for (const auto &object : mScene.renderables)
     {
         ZoneScopedC(tracy::Color::AntiqueWhite);
 

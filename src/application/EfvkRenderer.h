@@ -5,6 +5,7 @@
 #include "application/Application.h"
 #include "geometry/Model.h"
 #include "scene/Camera.h"
+#include "scene/Scene.h"
 
 #include <glm/glm.hpp>
 
@@ -21,7 +22,7 @@ namespace efvk
 class EfvkRenderer : public Application
 {
   public:
-    EfvkRenderer();
+    EfvkRenderer(const std::string &scenePath);
     ~EfvkRenderer() override;
 
     void Init() override;
@@ -39,7 +40,8 @@ class EfvkRenderer : public Application
     void createComputePipelines();
     void createDepthImage();
     void createFramebuffers(const VkRenderPass &renderPass);
-    void createScene();
+    void loadSceneFromDisk();
+    void uploadSceneToGpu();
 
     AllocatedBuffer createBuffer(size_t allocSize,
                                  VkBufferUsageFlags usage,
@@ -93,33 +95,16 @@ class EfvkRenderer : public Application
         VkDescriptorSet globalDescriptor;
         AllocatedBuffer cameraBuffer;
         AllocatedBuffer objectBuffer;
+        AllocatedBuffer dirLightBuffer;
 
         VkDescriptorSet clusteringDescriptor;
-
         AllocatedBuffer lightBuffer;
-
         AllocatedBuffer clusteringInfoBuffer;
-
         AllocatedBuffer lightGridBuffer;
-
         AllocatedBuffer lightIndicesBuffer;
-
         AllocatedBuffer activeLightsBuffer;
     };
     std::array<FrameData, kMaxFramesInFlight> mFrames;
-
-    struct RenderObject
-    {
-        std::shared_ptr<Model> model;
-        glm::mat4 transform;
-    };
-    std::vector<RenderObject> mRenderables;
-    struct PointLight
-    {
-        glm::vec3 position;
-        glm::vec3 color = glm::vec3(1.f);
-    };
-    std::vector<PointLight> mPointLights;
 
     TextureManager mTextureManager;
     struct GpuTexture
@@ -131,6 +116,9 @@ class EfvkRenderer : public Application
     std::unordered_map<std::string, GpuTexture> mGpuTextures;
 
     uint32_t mFrameCount{0};
+
+    std::string mScenePath;
+    Scene mScene;
 
     std::deque<Deleter> mDeleters;
 };

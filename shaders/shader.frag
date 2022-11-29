@@ -14,6 +14,16 @@ layout (set = 0, binding = 0) uniform CameraBuffer{
     vec3 position;
 } cameraData;
 
+struct DirLight
+{
+    vec3 direction;
+    vec3 color;
+};
+layout (std140, set = 0, binding = 2) uniform DirLightBuffer
+{
+    DirLight dirLight;
+};
+
 struct PointLight
 {
     vec3 position;
@@ -90,13 +100,13 @@ void main()
     vec3 F0 = vec3(0.04);
     F0 = mix(F0, albedo, metalness);
 
-    vec3 lightColor = vec3(1.0f);
+    vec3 lightColor = dirLight.color;
 
     // reflectance equation
     vec3 Lo = vec3(0.0);
 
     //Variables common to BRDFs
-    vec3 lightDir = normalize(vec3(0.5, 1.0, 0.2));
+    vec3 lightDir = normalize(dirLight.direction);
     vec3 halfway  = normalize(lightDir + V);
     float nDotV = max(dot(N, V), 0.0);
     float nDotL = max(dot(N, lightDir), 0.0);
