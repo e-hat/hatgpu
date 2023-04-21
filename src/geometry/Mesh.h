@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace efvk
+namespace hatgpu
 {
 struct Vertex
 {
@@ -103,6 +103,6 @@ struct Mesh
 
     bool loadFromObj(const std::string &filename);
 };
-}  // namespace efvk
+}  // namespace hatgpu
 
 #endif  //_INCLUDE_MESH_H

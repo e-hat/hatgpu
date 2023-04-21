@@ -6,7 +6,7 @@
 
 class GLFWwindow;
 
-namespace efvk
+namespace hatgpu
 {
 class Application;
 class InputManager
@@ -29,5 +29,5 @@ class InputManager
     Camera *mCamera = nullptr;
     Application *mApp;
 };
-}  // namespace efvk
+}  // namespace hatgpu
 #endif

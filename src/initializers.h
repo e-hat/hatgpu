@@ -2,7 +2,7 @@
 #define _INCLUDE_INITIALIZERS_H
 #include "efpch.h"
 
-namespace efvk
+namespace hatgpu
 {
 namespace init
 {
@@ -76,6 +76,6 @@ VkSamplerCreateInfo samplerInfo(
     VkFilter filters,
     VkSamplerAddressMode samplerAdressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
 }  // namespace init
-}  // namespace efvk
+}  // namespace hatgpu
 
 #endif  //_INCLUDE_INITIALIZERS_H

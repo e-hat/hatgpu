@@ -4,7 +4,7 @@
 
 #include <vector>
 
-namespace efvk
+namespace hatgpu
 {
 enum class CameraMovement
 {
@@ -173,5 +173,5 @@ class Camera
         Up    = glm::normalize(glm::cross(Right, Front));
     }
 };
-}  // namespace efvk
+}  // namespace hatgpu
 #endif

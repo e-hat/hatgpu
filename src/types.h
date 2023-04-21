@@ -4,7 +4,7 @@
 
 #include <vk_mem_alloc.h>
 
-namespace efvk
+namespace hatgpu
 {
 struct AllocatedBuffer
 {
@@ -17,6 +17,6 @@ struct AllocatedImage
     VkImage image;
     VmaAllocation allocation;
 };
-}  // namespace efvk
+}  // namespace hatgpu
 
 #endif  //_INCLUDE_TYPES_H

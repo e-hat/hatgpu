@@ -1,10 +1,10 @@
 #include "efpch.h"
 
-#include "application/EfvkRenderer.h"
+#include "application/HatGpuRenderer.h"
 
 int main()
 {
-    efvk::EfvkRenderer app("../scenes/clustered_demo.json");
+    hatgpu::HatGpuRenderer app("../scenes/clustered_demo.json");
     app.Run();
 
     return 0;

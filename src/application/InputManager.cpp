@@ -7,7 +7,7 @@
 
 #include <GLFW/glfw3.h>
 
-namespace efvk
+namespace hatgpu
 {
 void InputManager::SetGLFWCallbacks(GLFWwindow *window, Camera *camera)
 {
@@ -88,4 +88,4 @@ void InputManager::processInput(GLFWwindow *window, float deltaTime)
     if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
         manager->mCamera->ProcessKeyboard(CameraMovement::LOOKDOWN, deltaTime);
 }
-}  // namespace efvk
+}  // namespace hatgpu

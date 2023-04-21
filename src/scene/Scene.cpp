@@ -21,7 +21,7 @@ void from_json(const json &j, ::glm::vec3 &v)
 }
 }  // namespace glm
 
-namespace efvk
+namespace hatgpu
 {
 void from_json(const json &j, PointLight &p)
 {
@@ -35,7 +35,7 @@ void from_json(const json &j, DirLight &d)
     j.at("color").get_to(d.color);
 }
 
-void Scene::loadFromJson(const std::string &path, efvk::TextureManager &textureManager)
+void Scene::loadFromJson(const std::string &path, hatgpu::TextureManager &textureManager)
 {
     std::ifstream inputFile(path);
     if (!inputFile.is_open())
@@ -119,4 +119,4 @@ void Scene::loadFromJson(const std::string &path, efvk::TextureManager &textureM
         }
     }
 }
-}  // namespace efvk
+}  // namespace hatgpu

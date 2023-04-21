@@ -2,7 +2,7 @@
 #define _INCLUDE_TIME_H
 #include "efpch.h"
 
-namespace efvk
+namespace hatgpu
 {
 class Time
 {
@@ -15,5 +15,5 @@ class Time
     float deltaTime;
     float lastFrame;
 };
-}  // namespace efvk
+}  // namespace hatgpu
 #endif

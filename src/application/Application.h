@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace efvk
+namespace hatgpu
 {
 class Application
 {
@@ -117,5 +117,5 @@ class Application
     void createTracyContexts();
     std::deque<Deleter> mDeleters;
 };
-}  // namespace efvk
+}  // namespace hatgpu
 #endif

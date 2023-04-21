@@ -5,7 +5,7 @@
 
 #include <random>
 
-namespace efvk
+namespace hatgpu
 {
 class Random
 {
@@ -24,6 +24,6 @@ class Random
     static int GetRandomInRange(int a, int b);
     static glm::vec3 GetRandomInRange(glm::vec3 lowerXYZ, glm::vec3 upperXYZ);
 };
-}  // namespace efvk
+}  // namespace hatgpu
 
 #endif  //_INCLUDE_RANDOM_H

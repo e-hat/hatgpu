@@ -1,6 +1,6 @@
 #include "efpch.h"
 
-#include "EfvkRenderer.h"
+#include "HatGpuRenderer.h"
 #include "initializers.h"
 #include "util/Random.h"
 
@@ -13,7 +13,7 @@
 #include <iostream>
 #include <stdexcept>
 
-namespace efvk
+namespace hatgpu
 {
 namespace
 {
@@ -102,11 +102,11 @@ static constexpr uint32_t kNumClusters = kNumTilesX * kNumTilesY * kNumSlicesZ;
 static constexpr uint32_t kMaxLightsPerCluster = 65;
 }  // namespace
 
-EfvkRenderer::EfvkRenderer(const std::string &scenePath)
+HatGpuRenderer::HatGpuRenderer(const std::string &scenePath)
     : Application("Efvk Rendering Engine"), mScenePath(scenePath)
 {}
 
-void EfvkRenderer::Init()
+void HatGpuRenderer::Init()
 {
     VmaAllocatorCreateInfo allocatorInfo = {};
     allocatorInfo.physicalDevice         = mPhysicalDevice;
@@ -133,21 +133,21 @@ void EfvkRenderer::Init()
     generateAabb();
 }
 
-void EfvkRenderer::Exit() {}
+void HatGpuRenderer::Exit() {}
 
-void EfvkRenderer::OnRender()
+void HatGpuRenderer::OnRender()
 {
     recordCommandBuffer(mCurrentApplicationFrame->commandBuffer, mCurrentFrameIndex);
     ++mFrameCount;
 }
-void EfvkRenderer::OnImGuiRender() {}
+void HatGpuRenderer::OnImGuiRender() {}
 
-void EfvkRenderer::OnRecreateSwapchain()
+void HatGpuRenderer::OnRecreateSwapchain()
 {
     createFramebuffers(mRenderPass);
 }
 
-void EfvkRenderer::createFramebuffers(const VkRenderPass &renderPass)
+void HatGpuRenderer::createFramebuffers(const VkRenderPass &renderPass)
 {
     mSwapchainFramebuffers.resize(mSwapchainImageViews.size());
 
@@ -168,7 +168,7 @@ void EfvkRenderer::createFramebuffers(const VkRenderPass &renderPass)
     }
 }
 
-void EfvkRenderer::createDepthImage()
+void HatGpuRenderer::createDepthImage()
 {
     VkExtent3D depthImageExtent = {mSwapchainExtent.width, mSwapchainExtent.height, 1};
 
@@ -201,7 +201,7 @@ void EfvkRenderer::createDepthImage()
     });
 }
 
-void EfvkRenderer::createDescriptors()
+void HatGpuRenderer::createDescriptors()
 {
     std::vector<VkDescriptorPoolSize> sizes = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
                                                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 190},
@@ -463,7 +463,7 @@ void EfvkRenderer::createDescriptors()
     });
 }
 
-void EfvkRenderer::createGraphicsPipeline()
+void HatGpuRenderer::createGraphicsPipeline()
 {
     const auto vertShaderCode = readFile("../shaders/bin/shader.vert.spv");
     const auto fragShaderCode = readFile("../shaders/bin/shader.frag.spv");
@@ -589,7 +589,7 @@ void EfvkRenderer::createGraphicsPipeline()
     vkDestroyShaderModule(mDevice, fragShaderModule, nullptr);
 }
 
-void EfvkRenderer::createComputePipelines()
+void HatGpuRenderer::createComputePipelines()
 {
     const auto aabbShader     = readFile("../shaders/bin/compute/aabb_gen.comp.spv");
     VkShaderModule aabbModule = createShaderModule(aabbShader);
@@ -668,7 +668,7 @@ void EfvkRenderer::createComputePipelines()
     vkDestroyShaderModule(mDevice, cullLightsModule, nullptr);
 }
 
-void EfvkRenderer::createUploadContext()
+void HatGpuRenderer::createUploadContext()
 {
     VkFenceCreateInfo uploadFenceCreateInfo = init::fenceInfo();
     if (vkCreateFence(mDevice, &uploadFenceCreateInfo, nullptr, &mUploadContext.uploadFence) !=
@@ -699,7 +699,7 @@ void EfvkRenderer::createUploadContext()
     }
 }
 
-void EfvkRenderer::immediateSubmit(std::function<void(VkCommandBuffer)> &&function)
+void HatGpuRenderer::immediateSubmit(std::function<void(VkCommandBuffer)> &&function)
 {
     VkCommandBuffer cmd = mUploadContext.commandBuffer;
     VkCommandBufferBeginInfo cmdBeginInfo =
@@ -729,7 +729,7 @@ void EfvkRenderer::immediateSubmit(std::function<void(VkCommandBuffer)> &&functi
     vkResetCommandPool(mDevice, mUploadContext.commandPool, 0);
 }
 
-void EfvkRenderer::createRenderPass()
+void HatGpuRenderer::createRenderPass()
 {
     // Initialize color attachment
     VkAttachmentDescription colorAttachment{};
@@ -806,9 +806,9 @@ void EfvkRenderer::createRenderPass()
     mDeleters.emplace_back([this]() { vkDestroyRenderPass(mDevice, mRenderPass, nullptr); });
 }
 
-AllocatedBuffer EfvkRenderer::createBuffer(size_t allocSize,
-                                           VkBufferUsageFlags usage,
-                                           VmaMemoryUsage memoryUsage)
+AllocatedBuffer HatGpuRenderer::createBuffer(size_t allocSize,
+                                             VkBufferUsageFlags usage,
+                                             VmaMemoryUsage memoryUsage)
 {
     // allocate vertex buffer
     VkBufferCreateInfo bufferInfo{};
@@ -833,7 +833,7 @@ AllocatedBuffer EfvkRenderer::createBuffer(size_t allocSize,
     return newBuffer;
 }
 
-void EfvkRenderer::uploadMesh(Mesh &mesh)
+void HatGpuRenderer::uploadMesh(Mesh &mesh)
 {
     // Uploading the vertex data followed by the index data in contiguous memory
     const size_t verticesSize = mesh.vertices.size() * sizeof(Vertex);
@@ -911,7 +911,7 @@ void EfvkRenderer::uploadMesh(Mesh &mesh)
     vmaDestroyBuffer(mAllocator, stagingBuffer.buffer, stagingBuffer.allocation);
 }
 
-void EfvkRenderer::uploadTextures(Mesh &mesh)
+void HatGpuRenderer::uploadTextures(Mesh &mesh)
 {
     // Check whether linear GPU blitting (required by mipmaps) is even supported by this hardware
     // before we do all sorts of work
@@ -1147,12 +1147,12 @@ void EfvkRenderer::uploadTextures(Mesh &mesh)
     }
 }
 
-void EfvkRenderer::loadSceneFromDisk()
+void HatGpuRenderer::loadSceneFromDisk()
 {
     mScene.loadFromJson(mScenePath, mTextureManager);
 }
 
-void EfvkRenderer::uploadSceneToGpu()
+void HatGpuRenderer::uploadSceneToGpu()
 {
     for (auto &renderable : mScene.renderables)
     {
@@ -1192,7 +1192,7 @@ void EfvkRenderer::uploadSceneToGpu()
     }
 }
 
-void EfvkRenderer::generateAabb()
+void HatGpuRenderer::generateAabb()
 {
     immediateSubmit([this](VkCommandBuffer cmd) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, mAabbPipeline);
@@ -1220,7 +1220,7 @@ void EfvkRenderer::generateAabb()
     });
 }
 
-void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
+void HatGpuRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 {
     TracyVkZoneC(mCurrentApplicationFrame->tracyContext, commandBuffer, "drawObjects",
                  tracy::Color::Blue);
@@ -1339,7 +1339,7 @@ void EfvkRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
     vkCmdEndRenderPass(commandBuffer);
 }
 
-void EfvkRenderer::cullLights(VkCommandBuffer cmd, uint32_t imageIndex)
+void HatGpuRenderer::cullLights(VkCommandBuffer cmd, uint32_t imageIndex)
 {
     ZoneScopedC(tracy::Color::Cornsilk);
     TracyVkZoneC(mCurrentApplicationFrame->tracyContext, cmd, "Light culling",
@@ -1388,15 +1388,15 @@ void EfvkRenderer::cullLights(VkCommandBuffer cmd, uint32_t imageIndex)
                          barriers.data(), 0, nullptr);
 }
 
-void EfvkRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer,
-                                       [[maybe_unused]] uint32_t imageIndex)
+void HatGpuRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer,
+                                         [[maybe_unused]] uint32_t imageIndex)
 {
     ZoneScopedC(tracy::Color::PeachPuff);
 
     drawObjects(commandBuffer);
 }
 
-EfvkRenderer::~EfvkRenderer()
+HatGpuRenderer::~HatGpuRenderer()
 {
     vkDeviceWaitIdle(mDevice);
 
@@ -1408,4 +1408,4 @@ EfvkRenderer::~EfvkRenderer()
     }
 }
 
-}  // namespace efvk
+}  // namespace hatgpu

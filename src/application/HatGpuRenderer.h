@@ -1,5 +1,5 @@
-#ifndef _INCLUDE_EFVKRENDERER_H
-#define _INCLUDE_EFVKRENDERER_H
+#ifndef _INCLUDE_HATGPURENDERER_H
+#define _INCLUDE_HATGPURENDERER_H
 #include "efpch.h"
 
 #include "application/Application.h"
@@ -16,14 +16,14 @@
 #include <unordered_map>
 #include <vector>
 
-namespace efvk
+namespace hatgpu
 {
 
-class EfvkRenderer : public Application
+class HatGpuRenderer : public Application
 {
   public:
-    EfvkRenderer(const std::string &scenePath);
-    ~EfvkRenderer() override;
+    HatGpuRenderer(const std::string &scenePath);
+    ~HatGpuRenderer() override;
 
     void Init() override;
     void Exit() override;
@@ -123,6 +123,6 @@ class EfvkRenderer : public Application
     std::deque<Deleter> mDeleters;
 };
 
-}  // namespace efvk
+}  // namespace hatgpu
 
 #endif

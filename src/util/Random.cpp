@@ -3,7 +3,7 @@
 #include <time.h>
 #include "Random.h"
 
-namespace efvk
+namespace hatgpu
 {
 std::random_device Random::s_Device;
 std::mt19937 Random::s_Engine(Random::s_Device());
@@ -27,4 +27,4 @@ glm::vec3 Random::GetRandomInRange(glm::vec3 lowerXYZ, glm::vec3 upperXYZ)
                      GetRandomInRange<float>(lowerXYZ.z, upperXYZ.z));
 }
 
-}  // namespace efvk
+}  // namespace hatgpu

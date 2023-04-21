@@ -8,7 +8,7 @@
 #include <memory>
 #include <vector>
 
-namespace efvk
+namespace hatgpu
 {
 struct RenderObject
 {
@@ -36,6 +36,6 @@ struct Scene
 
     void loadFromJson(const std::string &path, TextureManager &textureManager);
 };
-}  // namespace efvk
+}  // namespace hatgpu
 
 #endif  //_INCLUDE_SCENE_H

@@ -11,7 +11,7 @@
 class aiNode;
 class aiScene;
 
-namespace efvk
+namespace hatgpu
 {
 
 class Model
@@ -24,6 +24,6 @@ class Model
     void processNode(aiNode *node, const aiScene *scene, TextureManager &textureManager);
     std::string mDirectory;
 };
-}  // namespace efvk
+}  // namespace hatgpu
 
 #endif  //_INCLUDE_MODEL_H

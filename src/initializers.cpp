@@ -2,7 +2,7 @@
 
 #include "initializers.h"
 
-namespace efvk
+namespace hatgpu
 {
 namespace init
 {
@@ -357,4 +357,4 @@ VkSamplerCreateInfo samplerInfo(
     return info;
 }
 }  // namespace init
-}  // namespace efvk
+}  // namespace hatgpu

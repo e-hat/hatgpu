@@ -2,7 +2,7 @@
 
 #include <GLFW/glfw3.h>
 
-namespace efvk
+namespace hatgpu
 {
 float Time::GetDeltaTime()
 {
@@ -11,4 +11,4 @@ float Time::GetDeltaTime()
     lastFrame          = currentFrame;
     return deltaTime;
 }
-}  // namespace efvk
+}  // namespace hatgpu

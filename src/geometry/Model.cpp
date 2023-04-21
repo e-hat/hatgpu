@@ -8,7 +8,7 @@
 
 #include <iostream>
 
-namespace efvk
+namespace hatgpu
 {
 namespace
 {
@@ -111,4 +111,4 @@ void Model::processNode(aiNode *node, const aiScene *scene, TextureManager &mana
         }
     }
 }
-}  // namespace efvk
+}  // namespace hatgpu

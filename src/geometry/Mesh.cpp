@@ -10,7 +10,7 @@
 
 #include <iostream>
 
-namespace efvk
+namespace hatgpu
 {
 namespace
 {
@@ -87,4 +87,4 @@ bool Mesh::loadFromObj(const std::string &filename)
     processNode(scene->mRootNode, scene, vertices);
     return true;
 }
-}  // namespace efvk
+}  // namespace hatgpu
