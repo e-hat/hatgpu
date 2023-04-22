@@ -1,6 +1,6 @@
 #ifndef _INCLUDE_CAMERA_H
 #define _INCLUDE_CAMERA_H
-#include "efpch.h"
+#include "hatpch.h"
 
 #include <vector>
 

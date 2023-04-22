@@ -1,6 +1,6 @@
 #ifndef _INCLUDE_HATGPURENDERER_H
 #define _INCLUDE_HATGPURENDERER_H
-#include "efpch.h"
+#include "hatpch.h"
 
 #include "application/Application.h"
 #include "geometry/Model.h"

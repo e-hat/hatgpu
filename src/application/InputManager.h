@@ -1,6 +1,6 @@
 #ifndef _INCLUDE_INPUT_MANAGER_H
 #define _INCLUDE_INPUT_MANAGER_H
-#include "efpch.h"
+#include "hatpch.h"
 
 #include "scene/Camera.h"
 

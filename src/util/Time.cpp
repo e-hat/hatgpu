@@ -1,3 +1,5 @@
+#include "hatpch.h"
+
 #include "Time.h"
 
 #include <GLFW/glfw3.h>

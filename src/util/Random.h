@@ -1,5 +1,6 @@
 #ifndef _INCLUDE_RANDOM_H
 #define _INCLUDE_RANDOM_H
+#include "hatpch.h"
 
 #include <glm/glm.hpp>
 

@@ -69,7 +69,7 @@ find_package(Vulkan REQUIRED)
 target_link_libraries(hatgpu PRIVATE ${Vulkan_LIBRARIES})
 target_include_directories(hatgpu PRIVATE ${Vulkan_INCLUDE_DIRS})
 
-target_precompile_headers(hatgpu PRIVATE ${SOURCE_DIR}/efpch.h)
+target_precompile_headers(hatgpu PRIVATE ${SOURCE_DIR}/hatpch.h)
 
 # target_compile_definitions(hatgpu PRIVATE DEBUG VALIDATION_DEBUG_BREAK)
 target_compile_definitions(hatgpu PRIVATE DEBUG)

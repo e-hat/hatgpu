@@ -1,6 +1,5 @@
-#include "efpch.h"
-
 #include "application/InputManager.h"
+#include "hatpch.h"
 
 #include "application/Application.h"
 #include "util/Time.h"

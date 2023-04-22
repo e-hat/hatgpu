@@ -1,5 +1,6 @@
 #ifndef _INCLUDE_SCENE_H
 #define _INCLUDE_SCENE_H
+#include "hatpch.h"
 
 #include "geometry/Model.h"
 

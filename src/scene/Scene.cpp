@@ -1,3 +1,4 @@
+#include "hatpch.h"
 
 #include "Scene.h"
 #include "util/Random.h"

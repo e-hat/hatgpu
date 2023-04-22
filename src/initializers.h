@@ -1,6 +1,6 @@
 #ifndef _INCLUDE_INITIALIZERS_H
 #define _INCLUDE_INITIALIZERS_H
-#include "efpch.h"
+#include "hatpch.h"
 
 namespace hatgpu
 {

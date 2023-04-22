@@ -1,4 +1,5 @@
 #include "Model.h"
+#include "hatpch.h"
 
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>

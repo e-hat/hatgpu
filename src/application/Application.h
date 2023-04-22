@@ -1,6 +1,6 @@
 #ifndef _INCLUDE_APPLICATION_H
 #define _INCLUDE_APPLICATION_H
-#include "efpch.h"
+#include "hatpch.h"
 
 #include "application/InputManager.h"
 #include "util/Time.h"

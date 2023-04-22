@@ -1,6 +1,7 @@
 #ifndef _INCLUDE_TIME_H
 #define _INCLUDE_TIME_H
-#include "efpch.h"
+
+#include "hatpch.h"
 
 namespace hatgpu
 {
