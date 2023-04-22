@@ -37,7 +37,6 @@ class HatGpuRenderer : public Application
     void createRenderPass();
     void createDescriptors();
     void createGraphicsPipeline();
-    void createComputePipelines();
     void createDepthImage();
     void createFramebuffers(const VkRenderPass &renderPass);
     void loadSceneFromDisk();
@@ -73,36 +72,16 @@ class HatGpuRenderer : public Application
     VkFormat mDepthFormat;
 
     VkDescriptorSetLayout mGlobalSetLayout;
-    VkDescriptorSetLayout mClusteringSetLayout;
     VkDescriptorSetLayout mTextureSetLayout;
 
     VkDescriptorPool mDescriptorPool;
-
-    // AABB generation
-    VkPipeline mAabbPipeline;
-    VkPipelineLayout mAabbPipelineLayout;
-    AllocatedBuffer mAabbBuffer;
-
-    // Light culling
-    VkPipeline mLightCullPipeline;
-    VkPipelineLayout mLightCullLayout;
-
-    void generateAabb();
-    void cullLights(VkCommandBuffer cmd, uint32_t imageIndex);
-
     struct FrameData
     {
         VkDescriptorSet globalDescriptor;
         AllocatedBuffer cameraBuffer;
         AllocatedBuffer objectBuffer;
         AllocatedBuffer dirLightBuffer;
-
-        VkDescriptorSet clusteringDescriptor;
         AllocatedBuffer lightBuffer;
-        AllocatedBuffer clusteringInfoBuffer;
-        AllocatedBuffer lightGridBuffer;
-        AllocatedBuffer lightIndicesBuffer;
-        AllocatedBuffer activeLightsBuffer;
     };
     std::array<FrameData, kMaxFramesInFlight> mFrames;
 

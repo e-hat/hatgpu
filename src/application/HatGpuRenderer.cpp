@@ -64,42 +64,6 @@ struct GpuDirLight
     glm::vec4 direction;
     glm::vec4 color;
 };
-
-struct ClusteringInfo
-{
-    glm::mat4 projInverse;
-    glm::vec2 screenDimensions;
-    // defines view frustrum
-    float zFar;
-    float zNear;
-    float scale;
-    float bias;
-
-    // describing 2D tile dimensions
-    float tileSizeX;
-    float tileSizeY;
-
-    uint numZSlices;
-};
-
-struct LightGridEntry
-{
-    uint offset;
-    uint nLights;
-};
-
-struct Aabb
-{
-    glm::vec4 minPt;
-    glm::vec4 maxPt;
-};
-
-static constexpr uint32_t kNumTilesX   = 16;
-static constexpr uint32_t kNumTilesY   = 9;
-static constexpr uint32_t kNumSlicesZ  = 24;
-static constexpr uint32_t kNumClusters = kNumTilesX * kNumTilesY * kNumSlicesZ;
-
-static constexpr uint32_t kMaxLightsPerCluster = 65;
 }  // namespace
 
 HatGpuRenderer::HatGpuRenderer(const std::string &scenePath)
@@ -126,11 +90,9 @@ void HatGpuRenderer::Init()
     loadSceneFromDisk();
     createDescriptors();
     createGraphicsPipeline();
-    createComputePipelines();
     createFramebuffers(mRenderPass);
 
     uploadSceneToGpu();
-    generateAabb();
 }
 
 void HatGpuRenderer::Exit() {}
@@ -221,14 +183,16 @@ void HatGpuRenderer::createDescriptors()
     // transforms
     VkDescriptorSetLayoutBinding cameraBufferBinding = init::descriptorSetLayoutBinding(
         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT, 0);
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0);
     VkDescriptorSetLayoutBinding objectBufferBinding = init::descriptorSetLayoutBinding(
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 1);
     VkDescriptorSetLayoutBinding dirLightBufferBinding = init::descriptorSetLayoutBinding(
         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
+    VkDescriptorSetLayoutBinding lightBufferBinding = init::descriptorSetLayoutBinding(
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 3);
 
-    std::array<VkDescriptorSetLayoutBinding, 3> layoutBindings = {
-        cameraBufferBinding, objectBufferBinding, dirLightBufferBinding};
+    std::array<VkDescriptorSetLayoutBinding, 4> layoutBindings = {
+        cameraBufferBinding, objectBufferBinding, dirLightBufferBinding, lightBufferBinding};
 
     VkDescriptorSetLayoutCreateInfo globalCreateInfo{};
     globalCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -242,45 +206,6 @@ void HatGpuRenderer::createDescriptors()
     {
         throw std::runtime_error("Unable to create global descriptor set layout");
     }
-
-    // Creating the clustering info descriptor set layout, which is used for clustered rendering
-    VkDescriptorSetLayoutBinding lightBufferBinding = init::descriptorSetLayoutBinding(
-        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-        VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT, 0);
-    VkDescriptorSetLayoutBinding clusteringInfoBufferBinding = init::descriptorSetLayoutBinding(
-        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT, 1);
-    VkDescriptorSetLayoutBinding lightGridBufferBinding = init::descriptorSetLayoutBinding(
-        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-        VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT, 2);
-    VkDescriptorSetLayoutBinding lightIndicesBufferBinding = init::descriptorSetLayoutBinding(
-        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-        VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT, 3);
-    VkDescriptorSetLayoutBinding aabbBufferBinding = init::descriptorSetLayoutBinding(
-        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT, 4);
-    VkDescriptorSetLayoutBinding activeLightsBinding = init::descriptorSetLayoutBinding(
-        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT, 5);
-
-    std::array<VkDescriptorSetLayoutBinding, 6> clusteringBindings = {
-        lightBufferBinding,        clusteringInfoBufferBinding, lightGridBufferBinding,
-        lightIndicesBufferBinding, aabbBufferBinding,           activeLightsBinding};
-
-    VkDescriptorSetLayoutCreateInfo clusterCreateInfo{};
-    clusterCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    clusterCreateInfo.pNext        = nullptr;
-    clusterCreateInfo.bindingCount = clusteringBindings.size();
-    clusterCreateInfo.pBindings    = clusteringBindings.data();
-    clusterCreateInfo.flags        = 0;
-
-    if (vkCreateDescriptorSetLayout(mDevice, &clusterCreateInfo, nullptr, &mClusteringSetLayout) !=
-        VK_SUCCESS)
-    {
-        throw std::runtime_error("Unable to create clustering descriptor set layout");
-    }
-
-    // Allocate the aabb buffer
-    mAabbBuffer = createBuffer(sizeof(Aabb) * kNumClusters, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                               VMA_MEMORY_USAGE_GPU_ONLY);
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
@@ -330,30 +255,9 @@ void HatGpuRenderer::createDescriptors()
         VkWriteDescriptorSet dirLightSetWrite = init::writeDescriptorBuffer(
             VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, mFrames[i].globalDescriptor, &dirLightBufferInfo, 2);
 
-        // Allocate the clustering info descriptor set
-        allocInfo.pSetLayouts = &mClusteringSetLayout;
-        vkAllocateDescriptorSets(mDevice, &allocInfo, &mFrames[i].clusteringDescriptor);
-
-        // Allocate the clustering info buffers
-        size_t kLightBufferSize = sizeof(GpuPointLight) * mScene.pointLights.size();
-        mFrames[i].lightBuffer  = createBuffer(kLightBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                               VMA_MEMORY_USAGE_CPU_TO_GPU);
-        static constexpr size_t kClusteringInfoBufferSize = sizeof(ClusteringInfo);
-        mFrames[i].clusteringInfoBuffer =
-            createBuffer(kClusteringInfoBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                         VMA_MEMORY_USAGE_CPU_TO_GPU);
-        static constexpr size_t kLightGridBufferSize = sizeof(LightGridEntry) * kNumClusters;
-        mFrames[i].lightGridBuffer                   = createBuffer(
-                              kLightGridBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-        static constexpr size_t kLightIndicesBufferSize =
-            sizeof(uint32_t) * kNumClusters * kMaxLightsPerCluster;
-        mFrames[i].lightIndicesBuffer =
-            createBuffer(kLightIndicesBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                         VMA_MEMORY_USAGE_CPU_TO_GPU);
-        static constexpr size_t kActiveLightsBufferSize = sizeof(uint32_t);
-        mFrames[i].activeLightsBuffer =
-            createBuffer(kActiveLightsBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                         VMA_MEMORY_USAGE_CPU_TO_GPU);
+        const size_t kLightBufferSize = sizeof(GpuPointLight) * mScene.pointLights.size();
+        mFrames[i].lightBuffer = createBuffer(kLightBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                              VMA_MEMORY_USAGE_CPU_TO_GPU);
 
         // Write the light buffer info
         VkDescriptorBufferInfo lightBufferInfo{};
@@ -361,58 +265,11 @@ void HatGpuRenderer::createDescriptors()
         lightBufferInfo.offset = 0;
         lightBufferInfo.range  = VK_WHOLE_SIZE;
 
-        VkWriteDescriptorSet lightSetWrite =
-            init::writeDescriptorBuffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                                        mFrames[i].clusteringDescriptor, &lightBufferInfo, 0);
+        VkWriteDescriptorSet lightSetWrite = init::writeDescriptorBuffer(
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, mFrames[i].globalDescriptor, &lightBufferInfo, 3);
 
-        VkDescriptorBufferInfo clusteringBufferInfo;
-        clusteringBufferInfo.buffer = mFrames[i].clusteringInfoBuffer.buffer;
-        clusteringBufferInfo.offset = 0;
-        clusteringBufferInfo.range  = VK_WHOLE_SIZE;
-
-        VkWriteDescriptorSet clusteringSetWrite =
-            init::writeDescriptorBuffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                                        mFrames[i].clusteringDescriptor, &clusteringBufferInfo, 1);
-
-        VkDescriptorBufferInfo lightGridBufferInfo{};
-        lightGridBufferInfo.buffer = mFrames[i].lightGridBuffer.buffer;
-        lightGridBufferInfo.offset = 0;
-        lightGridBufferInfo.range  = VK_WHOLE_SIZE;
-
-        VkWriteDescriptorSet lightGridSetWrite =
-            init::writeDescriptorBuffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                                        mFrames[i].clusteringDescriptor, &lightGridBufferInfo, 2);
-
-        VkDescriptorBufferInfo lightIndicesBufferInfo{};
-        lightIndicesBufferInfo.buffer = mFrames[i].lightIndicesBuffer.buffer;
-        lightIndicesBufferInfo.offset = 0;
-        lightIndicesBufferInfo.range  = VK_WHOLE_SIZE;
-
-        VkWriteDescriptorSet lightIndicesSetWrite = init::writeDescriptorBuffer(
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, mFrames[i].clusteringDescriptor,
-            &lightIndicesBufferInfo, 3);
-
-        VkDescriptorBufferInfo aabbBufferInfo{};
-        aabbBufferInfo.buffer = mAabbBuffer.buffer;
-        aabbBufferInfo.offset = 0;
-        aabbBufferInfo.range  = VK_WHOLE_SIZE;
-
-        VkWriteDescriptorSet aabbBufferSetWrite = init::writeDescriptorBuffer(
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, mFrames[i].clusteringDescriptor, &aabbBufferInfo, 4);
-
-        VkDescriptorBufferInfo activeLightsBufferInfo{};
-        activeLightsBufferInfo.buffer = mFrames[i].activeLightsBuffer.buffer;
-        activeLightsBufferInfo.offset = 0;
-        activeLightsBufferInfo.range  = VK_WHOLE_SIZE;
-
-        VkWriteDescriptorSet activeLightsSetWrite = init::writeDescriptorBuffer(
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, mFrames[i].clusteringDescriptor,
-            &activeLightsBufferInfo, 5);
-
-        std::array<VkWriteDescriptorSet, 9> writes = {
-            cameraSetWrite,       objSetWrite,        dirLightSetWrite,
-            lightSetWrite,        clusteringSetWrite, lightGridSetWrite,
-            lightIndicesSetWrite, aabbBufferSetWrite, activeLightsSetWrite};
+        std::array<VkWriteDescriptorSet, 4> writes = {cameraSetWrite, objSetWrite, dirLightSetWrite,
+                                                      lightSetWrite};
 
         vkUpdateDescriptorSets(mDevice, writes.size(), writes.data(), 0, nullptr);
     }
@@ -436,10 +293,7 @@ void HatGpuRenderer::createDescriptors()
     mDeleters.emplace_back([this]() {
         vkDestroyDescriptorSetLayout(mDevice, mGlobalSetLayout, nullptr);
         vkDestroyDescriptorSetLayout(mDevice, mTextureSetLayout, nullptr);
-        vkDestroyDescriptorSetLayout(mDevice, mClusteringSetLayout, nullptr);
         vkDestroyDescriptorPool(mDevice, mDescriptorPool, nullptr);
-
-        vmaDestroyBuffer(mAllocator, mAabbBuffer.buffer, mAabbBuffer.allocation);
 
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
@@ -451,14 +305,6 @@ void HatGpuRenderer::createDescriptors()
                              mFrames[i].dirLightBuffer.allocation);
             vmaDestroyBuffer(mAllocator, mFrames[i].lightBuffer.buffer,
                              mFrames[i].lightBuffer.allocation);
-            vmaDestroyBuffer(mAllocator, mFrames[i].clusteringInfoBuffer.buffer,
-                             mFrames[i].clusteringInfoBuffer.allocation);
-            vmaDestroyBuffer(mAllocator, mFrames[i].lightGridBuffer.buffer,
-                             mFrames[i].lightGridBuffer.allocation);
-            vmaDestroyBuffer(mAllocator, mFrames[i].lightIndicesBuffer.buffer,
-                             mFrames[i].lightIndicesBuffer.allocation);
-            vmaDestroyBuffer(mAllocator, mFrames[i].activeLightsBuffer.buffer,
-                             mFrames[i].activeLightsBuffer.allocation);
         }
     });
 }
@@ -538,8 +384,7 @@ void HatGpuRenderer::createGraphicsPipeline()
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = init::pipelineLayoutInfo();
     pipelineLayoutCreateInfo.pushConstantRangeCount     = 0;
     pipelineLayoutCreateInfo.pPushConstantRanges        = nullptr;
-    std::array<VkDescriptorSetLayout, 3> layouts        = {mGlobalSetLayout, mClusteringSetLayout,
-                                                           mTextureSetLayout};
+    std::array<VkDescriptorSetLayout, 2> layouts        = {mGlobalSetLayout, mTextureSetLayout};
     pipelineLayoutCreateInfo.setLayoutCount             = layouts.size();
     pipelineLayoutCreateInfo.pSetLayouts                = layouts.data();
 
@@ -587,85 +432,6 @@ void HatGpuRenderer::createGraphicsPipeline()
 
     vkDestroyShaderModule(mDevice, vertShaderModule, nullptr);
     vkDestroyShaderModule(mDevice, fragShaderModule, nullptr);
-}
-
-void HatGpuRenderer::createComputePipelines()
-{
-    const auto aabbShader     = readFile("../shaders/bin/compute/aabb_gen.comp.spv");
-    VkShaderModule aabbModule = createShaderModule(aabbShader);
-
-    VkPipelineShaderStageCreateInfo aabbStageInfo =
-        init::pipelineShaderStageInfo(VK_SHADER_STAGE_COMPUTE_BIT, aabbModule);
-
-    VkPipelineLayoutCreateInfo aabbLayoutInfo = init::pipelineLayoutInfo();
-    aabbLayoutInfo.pushConstantRangeCount     = 0;
-    aabbLayoutInfo.pPushConstantRanges        = nullptr;
-    aabbLayoutInfo.setLayoutCount             = 1;
-    aabbLayoutInfo.pSetLayouts                = &mClusteringSetLayout;
-
-    if (vkCreatePipelineLayout(mDevice, &aabbLayoutInfo, nullptr, &mAabbPipelineLayout) !=
-        VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create AABB pipeline layout");
-    }
-
-    mDeleters.emplace_back(
-        [this]() { vkDestroyPipelineLayout(mDevice, mAabbPipelineLayout, nullptr); });
-
-    VkComputePipelineCreateInfo aabbPipelineInfo{};
-    aabbPipelineInfo.sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    aabbPipelineInfo.pNext  = nullptr;
-    aabbPipelineInfo.layout = mAabbPipelineLayout;
-    aabbPipelineInfo.stage  = aabbStageInfo;
-
-    if (vkCreateComputePipelines(mDevice, VK_NULL_HANDLE, 1, &aabbPipelineInfo, nullptr,
-                                 &mAabbPipeline) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create AABB compute pipeline");
-    }
-
-    mDeleters.emplace_back([this]() { vkDestroyPipeline(mDevice, mAabbPipeline, nullptr); });
-
-    vkDestroyShaderModule(mDevice, aabbModule, nullptr);
-
-    const auto cullLightsShader     = readFile("../shaders/bin/compute/cull_lights.comp.spv");
-    VkShaderModule cullLightsModule = createShaderModule(cullLightsShader);
-
-    VkPipelineShaderStageCreateInfo cullLightsStageInfo =
-        init::pipelineShaderStageInfo(VK_SHADER_STAGE_COMPUTE_BIT, cullLightsModule);
-
-    VkPipelineLayoutCreateInfo cullLightsLayoutInfo           = init::pipelineLayoutInfo();
-    cullLightsLayoutInfo.pushConstantRangeCount               = 0;
-    cullLightsLayoutInfo.pPushConstantRanges                  = nullptr;
-    std::array<VkDescriptorSetLayout, 2> cullLightsSetLayouts = {mGlobalSetLayout,
-                                                                 mClusteringSetLayout};
-    cullLightsLayoutInfo.setLayoutCount                       = cullLightsSetLayouts.size();
-    cullLightsLayoutInfo.pSetLayouts                          = cullLightsSetLayouts.data();
-
-    if (vkCreatePipelineLayout(mDevice, &cullLightsLayoutInfo, nullptr, &mLightCullLayout) !=
-        VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create layout for light culling pipeline");
-    }
-
-    mDeleters.emplace_back(
-        [this]() { vkDestroyPipelineLayout(mDevice, mLightCullLayout, nullptr); });
-
-    VkComputePipelineCreateInfo cullLightsPipelineInfo{};
-    cullLightsPipelineInfo.sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    cullLightsPipelineInfo.pNext  = nullptr;
-    cullLightsPipelineInfo.layout = mLightCullLayout;
-    cullLightsPipelineInfo.stage  = cullLightsStageInfo;
-
-    if (vkCreateComputePipelines(mDevice, VK_NULL_HANDLE, 1, &cullLightsPipelineInfo, nullptr,
-                                 &mLightCullPipeline) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create light culling pipeline");
-    }
-
-    mDeleters.emplace_back([this]() { vkDestroyPipeline(mDevice, mLightCullPipeline, nullptr); });
-
-    vkDestroyShaderModule(mDevice, cullLightsModule, nullptr);
 }
 
 void HatGpuRenderer::createUploadContext()
@@ -1169,55 +935,6 @@ void HatGpuRenderer::uploadSceneToGpu()
             vkDestroyImageView(mDevice, texture.imageView, nullptr);
         }
     });
-
-    void *data;
-    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
-    {
-        vmaMapMemory(mAllocator, mFrames[i].clusteringInfoBuffer.allocation, &data);
-        ClusteringInfo clusteringInfo{};
-        clusteringInfo.projInverse      = glm::inverse(mCamera.GetProjectionMatrix());
-        clusteringInfo.screenDimensions = glm::vec2(mCamera.ScreenWidth, mCamera.ScreenHeight);
-        clusteringInfo.zNear            = mCamera.Near;
-        clusteringInfo.zFar             = mCamera.Far;
-        clusteringInfo.tileSizeX        = mCamera.ScreenWidth / kNumTilesX;
-        clusteringInfo.tileSizeY        = mCamera.ScreenHeight / kNumTilesY;
-        clusteringInfo.numZSlices       = kNumSlicesZ;
-        clusteringInfo.scale =
-            static_cast<float>(kNumSlicesZ) / glm::log2(mCamera.Far / mCamera.Near);
-        clusteringInfo.bias = -(static_cast<float>(kNumSlicesZ) * glm::log2(mCamera.Near) /
-                                glm::log2(mCamera.Far / mCamera.Near));
-        std::memcpy(data, &clusteringInfo, sizeof(ClusteringInfo));
-
-        vmaUnmapMemory(mAllocator, mFrames[i].clusteringInfoBuffer.allocation);
-    }
-}
-
-void HatGpuRenderer::generateAabb()
-{
-    immediateSubmit([this](VkCommandBuffer cmd) {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, mAabbPipeline);
-
-        for (size_t i = 0; i < kMaxFramesInFlight; ++i)
-        {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, mAabbPipelineLayout, 0, 1,
-                                    &mFrames[i].clusteringDescriptor, 0, nullptr);
-            vkCmdDispatch(cmd, kNumTilesX, kNumTilesY, kNumSlicesZ);
-        }
-
-        VkBufferMemoryBarrier barrierInfo{};
-        barrierInfo.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-        barrierInfo.pNext               = nullptr;
-        barrierInfo.srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
-        barrierInfo.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
-        barrierInfo.srcQueueFamilyIndex = mGraphicsQueueIndex;
-        barrierInfo.dstQueueFamilyIndex = mGraphicsQueueIndex;
-        barrierInfo.buffer              = mAabbBuffer.buffer;
-        barrierInfo.offset              = 0;
-        barrierInfo.size                = VK_WHOLE_SIZE;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 1, &barrierInfo,
-                             0, nullptr);
-    });
 }
 
 void HatGpuRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
@@ -1271,8 +988,6 @@ void HatGpuRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
         vmaUnmapMemory(mAllocator, mFrames[mCurrentFrameIndex].lightBuffer.allocation);
     }
 
-    cullLights(commandBuffer, mCurrentFrameIndex);
-
     VkRenderPassBeginInfo renderPassInfo = init::renderPassBeginInfo(
         mRenderPass, mSwapchainExtent, mSwapchainFramebuffers[mCurrentImageIndex]);
 
@@ -1290,9 +1005,8 @@ void HatGpuRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mGraphicsPipeline);
 
-        std::array<VkDescriptorSet, 2> descriptorSets = {
-            mFrames[mCurrentFrameIndex].globalDescriptor,
-            mFrames[mCurrentFrameIndex].clusteringDescriptor};
+        std::array<VkDescriptorSet, 1> descriptorSets = {
+            mFrames[mCurrentFrameIndex].globalDescriptor};
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 mGraphicsPipelineLayout, 0, descriptorSets.size(),
                                 descriptorSets.data(), 0, nullptr);
@@ -1330,62 +1044,13 @@ void HatGpuRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
             vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    mGraphicsPipelineLayout, 2, 1, &mesh.descriptor, 0, nullptr);
+                                    mGraphicsPipelineLayout, 1, 1, &mesh.descriptor, 0, nullptr);
 
             vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
         }
     }
 
     vkCmdEndRenderPass(commandBuffer);
-}
-
-void HatGpuRenderer::cullLights(VkCommandBuffer cmd, uint32_t imageIndex)
-{
-    ZoneScopedC(tracy::Color::Cornsilk);
-    TracyVkZoneC(mCurrentApplicationFrame->tracyContext, cmd, "Light culling",
-                 tracy::Color::DarkViolet);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, mLightCullPipeline);
-
-    void *data;
-    vmaMapMemory(mAllocator, mFrames[imageIndex].activeLightsBuffer.allocation, &data);
-    auto counterPtr = static_cast<uint32_t *>(data);
-    *counterPtr     = 0;
-    vmaUnmapMemory(mAllocator, mFrames[imageIndex].activeLightsBuffer.allocation);
-
-    std::array<VkDescriptorSet, 2> descriptorSets = {mFrames[imageIndex].globalDescriptor,
-                                                     mFrames[imageIndex].clusteringDescriptor};
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, mLightCullLayout, 0,
-                            descriptorSets.size(), descriptorSets.data(), 0, nullptr);
-
-    vkCmdDispatch(cmd, kNumTilesX, kNumTilesY, kNumSlicesZ);
-
-    VkBufferMemoryBarrier lightGridBarrier;
-    lightGridBarrier.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    lightGridBarrier.pNext               = nullptr;
-    lightGridBarrier.srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
-    lightGridBarrier.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
-    lightGridBarrier.srcQueueFamilyIndex = mGraphicsQueueIndex;
-    lightGridBarrier.dstQueueFamilyIndex = mGraphicsQueueIndex;
-    lightGridBarrier.buffer              = mFrames[imageIndex].lightGridBuffer.buffer;
-    lightGridBarrier.offset              = 0;
-    lightGridBarrier.size                = VK_WHOLE_SIZE;
-
-    VkBufferMemoryBarrier lightIndicesBarrier;
-    lightIndicesBarrier.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    lightIndicesBarrier.pNext               = nullptr;
-    lightIndicesBarrier.srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
-    lightIndicesBarrier.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
-    lightIndicesBarrier.srcQueueFamilyIndex = mGraphicsQueueIndex;
-    lightIndicesBarrier.dstQueueFamilyIndex = mGraphicsQueueIndex;
-    lightIndicesBarrier.buffer              = mFrames[imageIndex].lightIndicesBuffer.buffer;
-    lightIndicesBarrier.offset              = 0;
-    lightIndicesBarrier.size                = VK_WHOLE_SIZE;
-
-    std::array<VkBufferMemoryBarrier, 2> barriers = {lightGridBarrier, lightIndicesBarrier};
-
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, barriers.size(),
-                         barriers.data(), 0, nullptr);
 }
 
 void HatGpuRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer,
