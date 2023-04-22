@@ -14,8 +14,8 @@ file(GLOB TOPLEVEL_SOURCES ${SOURCE_DIR}/*.cpp)
 set(SOURCES ${SOURCES} ${SOURCE_DIR}/main.cpp
         ${SOURCE_DIR}/application/Application.h
         ${SOURCE_DIR}/application/Application.cpp
-        ${SOURCE_DIR}/application/HatGpuRenderer.h
-        ${SOURCE_DIR}/application/HatGpuRenderer.cpp
+        ${SOURCE_DIR}/application/ForwardRenderer.h
+        ${SOURCE_DIR}/application/ForwardRenderer.cpp
         ${SOURCE_DIR}/application/InputManager.h
         ${SOURCE_DIR}/application/InputManager.cpp
         ${SOURCE_DIR}/util/Time.h

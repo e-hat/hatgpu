@@ -1,6 +1,6 @@
 #include "hatpch.h"
 
-#include "HatGpuRenderer.h"
+#include "ForwardRenderer.h"
 #include "imgui.h"
 #include "initializers.h"
 #include "util/Random.h"
@@ -64,11 +64,11 @@ struct GpuDirLight
 };
 }  // namespace
 
-HatGpuRenderer::HatGpuRenderer(const std::string &scenePath)
-    : Application("Efvk Rendering Engine"), mScenePath(scenePath)
+ForwardRenderer::ForwardRenderer(const std::string &scenePath)
+    : Application("HatGPU"), mScenePath(scenePath)
 {}
 
-void HatGpuRenderer::Init()
+void ForwardRenderer::Init()
 {
     VmaAllocatorCreateInfo allocatorInfo = {};
     allocatorInfo.physicalDevice         = mPhysicalDevice;
@@ -89,24 +89,24 @@ void HatGpuRenderer::Init()
     uploadSceneToGpu();
 }
 
-void HatGpuRenderer::Exit() {}
+void ForwardRenderer::Exit() {}
 
-void HatGpuRenderer::OnRender()
+void ForwardRenderer::OnRender()
 {
     recordCommandBuffer(mCurrentApplicationFrame->commandBuffer, mCurrentFrameIndex);
     ++mFrameCount;
 }
-void HatGpuRenderer::OnImGuiRender()
+void ForwardRenderer::OnImGuiRender()
 {
     ImGui::ShowDemoWindow();
 }
 
-void HatGpuRenderer::OnRecreateSwapchain()
+void ForwardRenderer::OnRecreateSwapchain()
 {
     createFramebuffers(mRenderPass);
 }
 
-void HatGpuRenderer::createFramebuffers(const VkRenderPass &renderPass)
+void ForwardRenderer::createFramebuffers(const VkRenderPass &renderPass)
 {
     mSwapchainFramebuffers.resize(mSwapchainImageViews.size());
 
@@ -124,7 +124,7 @@ void HatGpuRenderer::createFramebuffers(const VkRenderPass &renderPass)
     }
 }
 
-void HatGpuRenderer::createDepthImage()
+void ForwardRenderer::createDepthImage()
 {
     VkExtent3D depthImageExtent = {mSwapchainExtent.width, mSwapchainExtent.height, 1};
 
@@ -151,7 +151,7 @@ void HatGpuRenderer::createDepthImage()
     });
 }
 
-void HatGpuRenderer::createDescriptors()
+void ForwardRenderer::createDescriptors()
 {
     std::vector<VkDescriptorPoolSize> sizes = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
                                                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 190},
@@ -294,7 +294,7 @@ void HatGpuRenderer::createDescriptors()
     });
 }
 
-void HatGpuRenderer::createGraphicsPipeline()
+void ForwardRenderer::createGraphicsPipeline()
 {
     const auto vertShaderCode = readFile("../shaders/bin/shader.vert.spv");
     const auto fragShaderCode = readFile("../shaders/bin/shader.frag.spv");
@@ -415,7 +415,7 @@ void HatGpuRenderer::createGraphicsPipeline()
     vkDestroyShaderModule(mDevice, fragShaderModule, nullptr);
 }
 
-void HatGpuRenderer::createRenderPass()
+void ForwardRenderer::createRenderPass()
 {
     // Initialize color attachment
     VkAttachmentDescription colorAttachment{};
@@ -490,9 +490,9 @@ void HatGpuRenderer::createRenderPass()
     mDeleters.emplace_back([this]() { vkDestroyRenderPass(mDevice, mRenderPass, nullptr); });
 }
 
-AllocatedBuffer HatGpuRenderer::createBuffer(size_t allocSize,
-                                             VkBufferUsageFlags usage,
-                                             VmaMemoryUsage memoryUsage)
+AllocatedBuffer ForwardRenderer::createBuffer(size_t allocSize,
+                                              VkBufferUsageFlags usage,
+                                              VmaMemoryUsage memoryUsage)
 {
     // allocate vertex buffer
     VkBufferCreateInfo bufferInfo{};
@@ -515,7 +515,7 @@ AllocatedBuffer HatGpuRenderer::createBuffer(size_t allocSize,
     return newBuffer;
 }
 
-void HatGpuRenderer::uploadMesh(Mesh &mesh)
+void ForwardRenderer::uploadMesh(Mesh &mesh)
 {
     // Uploading the vertex data followed by the index data in contiguous memory
     const size_t verticesSize = mesh.vertices.size() * sizeof(Vertex);
@@ -587,7 +587,7 @@ void HatGpuRenderer::uploadMesh(Mesh &mesh)
     vmaDestroyBuffer(mAllocator, stagingBuffer.buffer, stagingBuffer.allocation);
 }
 
-void HatGpuRenderer::uploadTextures(Mesh &mesh)
+void ForwardRenderer::uploadTextures(Mesh &mesh)
 {
     // Check whether linear GPU blitting (required by mipmaps) is even supported by this hardware
     // before we do all sorts of work
@@ -821,12 +821,12 @@ void HatGpuRenderer::uploadTextures(Mesh &mesh)
     }
 }
 
-void HatGpuRenderer::loadSceneFromDisk()
+void ForwardRenderer::loadSceneFromDisk()
 {
     mScene.loadFromJson(mScenePath, mTextureManager);
 }
 
-void HatGpuRenderer::uploadSceneToGpu()
+void ForwardRenderer::uploadSceneToGpu()
 {
     for (auto &renderable : mScene.renderables)
     {
@@ -845,7 +845,7 @@ void HatGpuRenderer::uploadSceneToGpu()
     });
 }
 
-void HatGpuRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
+void ForwardRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 {
     TracyVkZoneC(mCurrentApplicationFrame->tracyContext, commandBuffer, "drawObjects",
                  tracy::Color::Blue);
@@ -961,15 +961,15 @@ void HatGpuRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
     vkCmdEndRenderPass(commandBuffer);
 }
 
-void HatGpuRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer,
-                                         [[maybe_unused]] uint32_t imageIndex)
+void ForwardRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer,
+                                          [[maybe_unused]] uint32_t imageIndex)
 {
     ZoneScopedC(tracy::Color::PeachPuff);
 
     drawObjects(commandBuffer);
 }
 
-HatGpuRenderer::~HatGpuRenderer()
+ForwardRenderer::~ForwardRenderer()
 {
     vkDeviceWaitIdle(mDevice);
 

@@ -19,11 +19,11 @@
 namespace hatgpu
 {
 
-class HatGpuRenderer : public Application
+class ForwardRenderer : public Application
 {
   public:
-    HatGpuRenderer(const std::string &scenePath);
-    ~HatGpuRenderer() override;
+    ForwardRenderer(const std::string &scenePath);
+    ~ForwardRenderer() override;
 
     void Init() override;
     void Exit() override;

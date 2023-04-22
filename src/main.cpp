@@ -1,10 +1,10 @@
 #include "hatpch.h"
 
-#include "application/HatGpuRenderer.h"
+#include "application/ForwardRenderer.h"
 
 int main()
 {
-    hatgpu::HatGpuRenderer app("../scenes/sponza.json");
+    hatgpu::ForwardRenderer app("../scenes/sponza.json");
     app.Run();
 
     return 0;
