@@ -33,7 +33,6 @@ class HatGpuRenderer : public Application
     void OnRecreateSwapchain() override;
 
   private:
-    void createUploadContext();
     void createRenderPass();
     void createDescriptors();
     void createGraphicsPipeline();
@@ -52,16 +51,6 @@ class HatGpuRenderer : public Application
     void uploadMesh(Mesh &mesh);
     void uploadTextures(Mesh &mesh);
 
-    struct UploadContext
-    {
-        VkFence uploadFence;
-        VkCommandPool commandPool;
-        VkCommandBuffer commandBuffer;
-    };
-    UploadContext mUploadContext;
-
-    void immediateSubmit(std::function<void(VkCommandBuffer cmd)> &&function);
-
     VkRenderPass mRenderPass;
     VkPipelineLayout mGraphicsPipelineLayout;
     VkPipeline mGraphicsPipeline;
@@ -69,7 +58,6 @@ class HatGpuRenderer : public Application
 
     VkImageView mDepthImageView;
     AllocatedImage mDepthImage{};
-    VkFormat mDepthFormat;
 
     VkDescriptorSetLayout mGlobalSetLayout;
     VkDescriptorSetLayout mTextureSetLayout;

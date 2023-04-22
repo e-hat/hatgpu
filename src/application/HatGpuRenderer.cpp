@@ -1,6 +1,7 @@
 #include "hatpch.h"
 
 #include "HatGpuRenderer.h"
+#include "imgui.h"
 #include "initializers.h"
 #include "util/Random.h"
 
@@ -84,7 +85,6 @@ void HatGpuRenderer::Init()
 
     mDeleters.emplace_back([this]() { vmaDestroyAllocator(mAllocator); });
 
-    createUploadContext();
     createDepthImage();
     createRenderPass();
     loadSceneFromDisk();
@@ -102,7 +102,10 @@ void HatGpuRenderer::OnRender()
     recordCommandBuffer(mCurrentApplicationFrame->commandBuffer, mCurrentFrameIndex);
     ++mFrameCount;
 }
-void HatGpuRenderer::OnImGuiRender() {}
+void HatGpuRenderer::OnImGuiRender()
+{
+    ImGui::ShowDemoWindow();
+}
 
 void HatGpuRenderer::OnRecreateSwapchain()
 {
@@ -134,10 +137,8 @@ void HatGpuRenderer::createDepthImage()
 {
     VkExtent3D depthImageExtent = {mSwapchainExtent.width, mSwapchainExtent.height, 1};
 
-    mDepthFormat = VK_FORMAT_D32_SFLOAT;
-
     VkImageCreateInfo imageInfo = init::imageInfo(
-        mDepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
+        kDepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.tiling  = VK_IMAGE_TILING_OPTIMAL;
 
@@ -151,7 +152,7 @@ void HatGpuRenderer::createDepthImage()
     }
 
     VkImageViewCreateInfo viewInfo =
-        init::imageViewInfo(mDepthFormat, mDepthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT);
+        init::imageViewInfo(kDepthFormat, mDepthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT);
     if (vkCreateImageView(mDevice, &viewInfo, nullptr, &mDepthImageView) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to create depth image view");
@@ -434,67 +435,6 @@ void HatGpuRenderer::createGraphicsPipeline()
     vkDestroyShaderModule(mDevice, fragShaderModule, nullptr);
 }
 
-void HatGpuRenderer::createUploadContext()
-{
-    VkFenceCreateInfo uploadFenceCreateInfo = init::fenceInfo();
-    if (vkCreateFence(mDevice, &uploadFenceCreateInfo, nullptr, &mUploadContext.uploadFence) !=
-        VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create upload context fence");
-    }
-
-    mDeleters.emplace_back(
-        [this]() { vkDestroyFence(mDevice, mUploadContext.uploadFence, nullptr); });
-
-    VkCommandPoolCreateInfo commandPoolCreateInfo = init::commandPoolInfo(mGraphicsQueueIndex);
-    if (vkCreateCommandPool(mDevice, &commandPoolCreateInfo, nullptr,
-                            &mUploadContext.commandPool) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create upload context command pool");
-    }
-
-    mDeleters.emplace_back(
-        [this]() { vkDestroyCommandPool(mDevice, mUploadContext.commandPool, nullptr); });
-
-    VkCommandBufferAllocateInfo commandBufferAllocInfo =
-        init::commandBufferAllocInfo(mUploadContext.commandPool);
-    if (vkAllocateCommandBuffers(mDevice, &commandBufferAllocInfo, &mUploadContext.commandBuffer) !=
-        VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to allocate upload context command buffer");
-    }
-}
-
-void HatGpuRenderer::immediateSubmit(std::function<void(VkCommandBuffer)> &&function)
-{
-    VkCommandBuffer cmd = mUploadContext.commandBuffer;
-    VkCommandBufferBeginInfo cmdBeginInfo =
-        init::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-    if (vkBeginCommandBuffer(cmd, &cmdBeginInfo) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to begin command buffer");
-    }
-
-    function(cmd);
-
-    if (vkEndCommandBuffer(cmd) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to end command buffer");
-    }
-
-    VkSubmitInfo submitInfo = init::submitInfo(&cmd);
-    if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mUploadContext.uploadFence) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to submit to queue");
-    }
-
-    vkWaitForFences(mDevice, 1, &mUploadContext.uploadFence, true,
-                    std::numeric_limits<uint32_t>::max());
-    vkResetFences(mDevice, 1, &mUploadContext.uploadFence);
-
-    vkResetCommandPool(mDevice, mUploadContext.commandPool, 0);
-}
-
 void HatGpuRenderer::createRenderPass()
 {
     // Initialize color attachment
@@ -514,7 +454,7 @@ void HatGpuRenderer::createRenderPass()
 
     // Initialize depth attachment
     VkAttachmentDescription depthAttachment{};
-    depthAttachment.format         = mDepthFormat;
+    depthAttachment.format         = kDepthFormat;
     depthAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
     depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;

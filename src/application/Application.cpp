@@ -3,6 +3,9 @@
 #include "application/Application.h"
 #include "initializers.h"
 
+#include <backends/imgui_impl_glfw.h>
+#include <backends/imgui_impl_vulkan.h>
+#include <imgui.h>
 #include <tracy/Tracy.hpp>
 #include <tracy/TracyVulkan.hpp>
 
@@ -271,6 +274,7 @@ Application::Application(const std::string &windowName)
     mCamera.Position = {0.f, 0.f, 3.f};
     initWindow();
     initVulkan();
+    initImGui();
 }
 
 void Application::initWindow()
@@ -308,6 +312,212 @@ void Application::initVulkan()
     createCommandPool();
     createCommandBuffers();
     createTracyContexts();
+    createUploadContext();
+}
+
+void Application::initImGui()
+{
+    IMGUI_CHECKVERSION();
+
+    createUiPass();
+    // 1: create descriptor pool for IMGUI
+    //  the size of the pool is very oversize, but it's copied from imgui demo itself.
+    VkDescriptorPoolSize poolSizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+                                        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+                                        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
+                                        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
+                                        {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
+                                        {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
+                                        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+                                        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
+                                        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
+                                        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
+                                        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000}};
+
+    VkDescriptorPoolCreateInfo poolInfo = {};
+    poolInfo.sType                      = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags                      = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    poolInfo.maxSets                    = 1000;
+    poolInfo.poolSizeCount              = std::size(poolSizes);
+    poolInfo.pPoolSizes                 = poolSizes;
+
+    VkDescriptorPool imguiPool;
+    if (vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &imguiPool) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create descriptor pool for Dear ImGui");
+    }
+
+    // 2: initialize imgui library
+
+    // this initializes the core structures of imgui
+    ImGui::CreateContext();
+    ImGui::StyleColorsDark();
+
+    // this initializes imgui for SDL
+    ImGui_ImplGlfw_InitForVulkan(mWindow, true);
+
+    // this initializes imgui for Vulkan
+    ImGui_ImplVulkan_InitInfo initInfo = {};
+    initInfo.Instance                  = mInstance;
+    initInfo.PhysicalDevice            = mPhysicalDevice;
+    initInfo.Device                    = mDevice;
+    initInfo.Queue                     = mGraphicsQueue;
+    initInfo.DescriptorPool            = imguiPool;
+    initInfo.MinImageCount             = 3;
+    initInfo.ImageCount                = 3;
+    initInfo.MSAASamples               = VK_SAMPLE_COUNT_1_BIT;
+
+    ImGui_ImplVulkan_Init(&initInfo, mUiPass);
+
+    // execute a gpu command to upload imgui font textures
+    immediateSubmit([&](VkCommandBuffer cmd) { ImGui_ImplVulkan_CreateFontsTexture(cmd); });
+
+    // clear font textures from cpu data
+    ImGui_ImplVulkan_DestroyFontUploadObjects();
+
+    // add the destroy the imgui created structures
+    mDeleters.emplace_back([imguiPool, this] {
+        vkDestroyDescriptorPool(mDevice, imguiPool, nullptr);
+        ImGui_ImplVulkan_Shutdown();
+    });
+}
+
+void Application::immediateSubmit(std::function<void(VkCommandBuffer)> &&function)
+{
+    VkCommandBuffer cmd = mUploadContext.commandBuffer;
+    VkCommandBufferBeginInfo cmdBeginInfo =
+        init::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+    if (vkBeginCommandBuffer(cmd, &cmdBeginInfo) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to begin command buffer");
+    }
+
+    function(cmd);
+
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to end command buffer");
+    }
+
+    VkSubmitInfo submitInfo = init::submitInfo(&cmd);
+    if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mUploadContext.uploadFence) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to submit to queue");
+    }
+
+    vkWaitForFences(mDevice, 1, &mUploadContext.uploadFence, true,
+                    std::numeric_limits<uint32_t>::max());
+    vkResetFences(mDevice, 1, &mUploadContext.uploadFence);
+
+    vkResetCommandPool(mDevice, mUploadContext.commandPool, 0);
+}
+
+void Application::createUploadContext()
+{
+    VkFenceCreateInfo uploadFenceCreateInfo = init::fenceInfo();
+    if (vkCreateFence(mDevice, &uploadFenceCreateInfo, nullptr, &mUploadContext.uploadFence) !=
+        VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create upload context fence");
+    }
+
+    mDeleters.emplace_back(
+        [this]() { vkDestroyFence(mDevice, mUploadContext.uploadFence, nullptr); });
+
+    VkCommandPoolCreateInfo commandPoolCreateInfo = init::commandPoolInfo(mGraphicsQueueIndex);
+    if (vkCreateCommandPool(mDevice, &commandPoolCreateInfo, nullptr,
+                            &mUploadContext.commandPool) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create upload context command pool");
+    }
+
+    mDeleters.emplace_back(
+        [this]() { vkDestroyCommandPool(mDevice, mUploadContext.commandPool, nullptr); });
+
+    VkCommandBufferAllocateInfo commandBufferAllocInfo =
+        init::commandBufferAllocInfo(mUploadContext.commandPool);
+    if (vkAllocateCommandBuffers(mDevice, &commandBufferAllocInfo, &mUploadContext.commandBuffer) !=
+        VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to allocate upload context command buffer");
+    }
+}
+
+void Application::createUiPass()
+{
+    // Initialize color attachment
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format         = mSwapchainImageFormat;
+    colorAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_LOAD;
+    colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference colorAttachmentRef{};
+    colorAttachmentRef.attachment = 0;
+    colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    // Initialize depth attachment
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format         = kDepthFormat;
+    depthAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depthAttachmentRef{};
+    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount    = 1;
+    subpass.pColorAttachments       = &colorAttachmentRef;
+    subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass    = 0;
+    dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    VkSubpassDependency depthDependency{};
+    depthDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    depthDependency.dstSubpass = 0;
+    depthDependency.srcStageMask =
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    depthDependency.srcAccessMask = 0;
+    depthDependency.dstStageMask =
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    depthDependency.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+    std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
+    std::array<VkSubpassDependency, 2> dependencies    = {dependency, depthDependency};
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    renderPassInfo.pAttachments    = attachments.data();
+    renderPassInfo.subpassCount    = 1;
+    renderPassInfo.pSubpasses      = &subpass;
+    renderPassInfo.subpassCount    = 1;
+    renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
+    renderPassInfo.pDependencies   = dependencies.data();
+
+    if (vkCreateRenderPass(mDevice, &renderPassInfo, nullptr, &mUiPass) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create render pass");
+    }
+
+    mDeleters.emplace_back([this]() { vkDestroyRenderPass(mDevice, mUiPass, nullptr); });
 }
 
 void Application::Run()
@@ -348,6 +558,20 @@ void Application::Run()
             throw std::runtime_error("Failed to begin recording command buffer");
         }
 
+        ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+
+        ImGui::NewFrame();
+
+        OnImGuiRender();
+
+        {
+            TracyVkZoneC(mCurrentApplicationFrame->tracyContext,
+                         mCurrentApplicationFrame->commandBuffer, "ImGui::Render",
+                         tracy::Color::Blue);
+            ImGui::Render();
+        }
+
         {
             TracyVkZoneC(mCurrentApplicationFrame->tracyContext,
                          mCurrentApplicationFrame->commandBuffer, "OnRender",
@@ -355,6 +579,24 @@ void Application::Run()
 
             OnRender();
         }
+
+        VkRenderPassBeginInfo uiPassBegin = init::renderPassBeginInfo(
+            mUiPass, mSwapchainExtent, mSwapchainFramebuffers[mCurrentImageIndex]);
+        uiPassBegin.clearValueCount = 0;
+        uiPassBegin.pClearValues    = VK_NULL_HANDLE;
+
+        vkCmdBeginRenderPass(mCurrentApplicationFrame->commandBuffer, &uiPassBegin,
+                             VK_SUBPASS_CONTENTS_INLINE);
+
+        {
+            TracyVkZoneC(mCurrentApplicationFrame->tracyContext,
+                         mCurrentApplicationFrame->commandBuffer, "ImGui RenderDrawData",
+                         tracy::Color::Blue);
+            ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),
+                                            mCurrentApplicationFrame->commandBuffer);
+        }
+
+        vkCmdEndRenderPass(mCurrentApplicationFrame->commandBuffer);
 
         TracyVkCollect(mCurrentApplicationFrame->tracyContext,
                        mCurrentApplicationFrame->commandBuffer);
@@ -405,8 +647,6 @@ void Application::Run()
 
         mCurrentFrameIndex       = (1 + mCurrentFrameIndex) % kMaxFramesInFlight;
         mCurrentApplicationFrame = &mFrames[mCurrentFrameIndex];
-
-        OnImGuiRender();
 
         glfwSwapBuffers(mWindow);
         FrameMark;

@@ -35,7 +35,19 @@ class Application
 
     void SetFramebufferResized(bool value) { mFramebufferResized = value; }
 
+    static constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
+
   protected:
+    void immediateSubmit(std::function<void(VkCommandBuffer)> &&function);
+
+    struct UploadContext
+    {
+        VkFence uploadFence;
+        VkCommandPool commandPool;
+        VkCommandBuffer commandBuffer;
+    };
+    UploadContext mUploadContext;
+
     static constexpr int kMaxFramesInFlight = 2;
 
     GLFWwindow *mWindow;
@@ -91,6 +103,8 @@ class Application
     uint32_t mGraphicsQueueIndex;
     VkQueue mPresentQueue;
 
+    VkRenderPass mUiPass;
+
     bool mFramebufferResized{false};
 
     VkShaderModule createShaderModule(const std::vector<char> &code);
@@ -101,6 +115,9 @@ class Application
   private:
     void initWindow();
     void initVulkan();
+    void initImGui();
+
+    void renderImGui();
 
     void createInstance();
     void setupDebugMessenger();
@@ -115,6 +132,8 @@ class Application
     void createCommandPool();
     void createCommandBuffers();
     void createTracyContexts();
+    void createUploadContext();
+    void createUiPass();
     std::deque<Deleter> mDeleters;
 };
 }  // namespace hatgpu

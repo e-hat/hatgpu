@@ -5,6 +5,7 @@
 #include "util/Time.h"
 
 #include <GLFW/glfw3.h>
+#include <imgui.h>
 
 namespace hatgpu
 {
@@ -31,24 +32,27 @@ void InputManager::ProcessInput(GLFWwindow *window, float deltaTime)
 // -------------------------------------------------------
 void InputManager::mouse_callback(GLFWwindow *window, double xpos, double ypos)
 {
-    auto manager = static_cast<InputManager *>(glfwGetWindowUserPointer(window));
-    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
+    if (!ImGui::GetIO().WantCaptureMouse)
     {
-        if (manager->mFirstMouse)
+        auto manager = static_cast<InputManager *>(glfwGetWindowUserPointer(window));
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
         {
-            manager->mLastX      = (float)xpos;
-            manager->mLastY      = (float)ypos;
-            manager->mFirstMouse = false;
+            if (manager->mFirstMouse)
+            {
+                manager->mLastX      = (float)xpos;
+                manager->mLastY      = (float)ypos;
+                manager->mFirstMouse = false;
+            }
+
+            float xoffset = (float)xpos - manager->mLastX;
+            float yoffset = manager->mLastY -
+                            (float)ypos;  // reversed since y-coordinates go from bottom to top
+
+            manager->mLastX = (float)xpos;
+            manager->mLastY = (float)ypos;
+
+            manager->mCamera->ProcessMouseMovement(xoffset, yoffset);
         }
-
-        float xoffset = (float)xpos - manager->mLastX;
-        float yoffset =
-            manager->mLastY - (float)ypos;  // reversed since y-coordinates go from bottom to top
-
-        manager->mLastX = (float)xpos;
-        manager->mLastY = (float)ypos;
-
-        manager->mCamera->ProcessMouseMovement(xoffset, yoffset);
     }
 }
 
@@ -66,25 +70,28 @@ void InputManager::scroll_callback(GLFWwindow *window,
 void InputManager::processInput(GLFWwindow *window, float deltaTime)
 {
     glfwPollEvents();
-    auto manager = static_cast<InputManager *>(glfwGetWindowUserPointer(window));
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
+    if (!ImGui::GetIO().WantCaptureKeyboard)
+    {
+        auto manager = static_cast<InputManager *>(glfwGetWindowUserPointer(window));
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, true);
 
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        manager->mCamera->ProcessKeyboard(CameraMovement::FORWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        manager->mCamera->ProcessKeyboard(CameraMovement::BACKWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        manager->mCamera->ProcessKeyboard(CameraMovement::LEFT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        manager->mCamera->ProcessKeyboard(CameraMovement::RIGHT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
-        manager->mCamera->ProcessKeyboard(CameraMovement::LOOKLEFT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
-        manager->mCamera->ProcessKeyboard(CameraMovement::LOOKRIGHT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
-        manager->mCamera->ProcessKeyboard(CameraMovement::LOOKUP, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
-        manager->mCamera->ProcessKeyboard(CameraMovement::LOOKDOWN, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            manager->mCamera->ProcessKeyboard(CameraMovement::FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            manager->mCamera->ProcessKeyboard(CameraMovement::BACKWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            manager->mCamera->ProcessKeyboard(CameraMovement::LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            manager->mCamera->ProcessKeyboard(CameraMovement::RIGHT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
+            manager->mCamera->ProcessKeyboard(CameraMovement::LOOKLEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+            manager->mCamera->ProcessKeyboard(CameraMovement::LOOKRIGHT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
+            manager->mCamera->ProcessKeyboard(CameraMovement::LOOKUP, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
+            manager->mCamera->ProcessKeyboard(CameraMovement::LOOKDOWN, deltaTime);
+    }
 }
 }  // namespace hatgpu
