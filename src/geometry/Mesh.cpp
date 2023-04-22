@@ -56,10 +56,7 @@ void TextureManager::loadTexture(const std::string &file)
     int width, height, channels;
     stbi_uc *ucPixels = stbi_load(file.c_str(), &width, &height, &channels, STBI_rgb_alpha);
 
-    if (ucPixels == nullptr)
-    {
-        throw std::runtime_error(std::string("Failed to load texture file: ") + file);
-    }
+    H_ASSERT(ucPixels != nullptr, std::string("Failed to load texture file: ") + file);
 
     auto result    = std::make_shared<Texture>(static_cast<void *>(ucPixels), width, height);
     textures[file] = std::move(result);

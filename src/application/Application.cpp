@@ -89,7 +89,7 @@ debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     {
         // use std::endl to flush the stream, else errors might pop up at random times during
         // execution (this actually happened :O)
-        std::cerr << "Validation layer: " << pCallbackData->pMessage << std::endl;
+        std::cerr << "HATGPU: [VULKAN VALIDATION ERROR]: " << pCallbackData->pMessage << std::endl;
 #ifdef VALIDATION_DEBUG_BREAK
         __builtin_trap();
 #endif
@@ -285,10 +285,7 @@ void Application::initWindow()
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     mWindow = glfwCreateWindow(kWidth, kHeight, mWindowName.c_str(), nullptr, nullptr);
-    if (mWindow == nullptr)
-    {
-        throw std::runtime_error("Could not create GLFWwindow");
-    }
+    H_ASSERT(mWindow != nullptr, "Could not create GLFWwindow");
 
     mInputManager.SetGLFWCallbacks(mWindow, &mCamera);
 
@@ -342,10 +339,8 @@ void Application::initImGui()
     poolInfo.pPoolSizes                 = poolSizes;
 
     VkDescriptorPool imguiPool;
-    if (vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &imguiPool) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create descriptor pool for Dear ImGui");
-    }
+    H_CHECK(vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &imguiPool),
+            "Failed to create descriptor pool for Dear ImGui");
 
     // 2: initialize imgui library
 
@@ -387,23 +382,15 @@ void Application::immediateSubmit(std::function<void(VkCommandBuffer)> &&functio
     VkCommandBuffer cmd = mUploadContext.commandBuffer;
     VkCommandBufferBeginInfo cmdBeginInfo =
         init::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-    if (vkBeginCommandBuffer(cmd, &cmdBeginInfo) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to begin command buffer");
-    }
+    H_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo), "Failed to begin command buffer");
 
     function(cmd);
 
-    if (vkEndCommandBuffer(cmd) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to end command buffer");
-    }
+    H_CHECK(vkEndCommandBuffer(cmd), "Failed to end command buffer");
 
     VkSubmitInfo submitInfo = init::submitInfo(&cmd);
-    if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mUploadContext.uploadFence) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to submit to queue");
-    }
+    H_CHECK(vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mUploadContext.uploadFence),
+            "Failed to submit to queue");
 
     vkWaitForFences(mDevice, 1, &mUploadContext.uploadFence, true,
                     std::numeric_limits<uint32_t>::max());
@@ -415,32 +402,25 @@ void Application::immediateSubmit(std::function<void(VkCommandBuffer)> &&functio
 void Application::createUploadContext()
 {
     VkFenceCreateInfo uploadFenceCreateInfo = init::fenceInfo();
-    if (vkCreateFence(mDevice, &uploadFenceCreateInfo, nullptr, &mUploadContext.uploadFence) !=
-        VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create upload context fence");
-    }
+    H_CHECK(vkCreateFence(mDevice, &uploadFenceCreateInfo, nullptr, &mUploadContext.uploadFence),
+            "Failed to create upload context fence");
 
     mDeleters.emplace_back(
         [this]() { vkDestroyFence(mDevice, mUploadContext.uploadFence, nullptr); });
 
     VkCommandPoolCreateInfo commandPoolCreateInfo = init::commandPoolInfo(mGraphicsQueueIndex);
-    if (vkCreateCommandPool(mDevice, &commandPoolCreateInfo, nullptr,
-                            &mUploadContext.commandPool) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create upload context command pool");
-    }
+    H_CHECK(
+        vkCreateCommandPool(mDevice, &commandPoolCreateInfo, nullptr, &mUploadContext.commandPool),
+        "Failed to create upload context command pool");
 
     mDeleters.emplace_back(
         [this]() { vkDestroyCommandPool(mDevice, mUploadContext.commandPool, nullptr); });
 
     VkCommandBufferAllocateInfo commandBufferAllocInfo =
         init::commandBufferAllocInfo(mUploadContext.commandPool);
-    if (vkAllocateCommandBuffers(mDevice, &commandBufferAllocInfo, &mUploadContext.commandBuffer) !=
-        VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to allocate upload context command buffer");
-    }
+    H_CHECK(
+        vkAllocateCommandBuffers(mDevice, &commandBufferAllocInfo, &mUploadContext.commandBuffer),
+        "Failed to allocate upload context command buffer");
 }
 
 void Application::createUiPass()
@@ -512,10 +492,8 @@ void Application::createUiPass()
     renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
     renderPassInfo.pDependencies   = dependencies.data();
 
-    if (vkCreateRenderPass(mDevice, &renderPassInfo, nullptr, &mUiPass) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create render pass");
-    }
+    H_CHECK(vkCreateRenderPass(mDevice, &renderPassInfo, nullptr, &mUiPass),
+            "Failed to create render pass");
 
     mDeleters.emplace_back([this]() { vkDestroyRenderPass(mDevice, mUiPass, nullptr); });
 }
@@ -544,19 +522,15 @@ void Application::Run()
                 recreateSwapchain();
                 return;
             }
-            else if (nextImageResult != VK_SUCCESS && nextImageResult != VK_SUBOPTIMAL_KHR)
-            {
-                throw std::runtime_error("Failed to acquire swapchain image");
-            }
+            H_ASSERT(nextImageResult == VK_SUCCESS && nextImageResult != VK_SUBOPTIMAL_KHR,
+                     "Failed to acquire swapchain image");
         }
         vkResetFences(mDevice, 1, &mCurrentApplicationFrame->inFlightFence);
         vkResetCommandBuffer(mCurrentApplicationFrame->commandBuffer, 0);
 
         VkCommandBufferBeginInfo beginInfo = init::commandBufferBeginInfo();
-        if (vkBeginCommandBuffer(mCurrentApplicationFrame->commandBuffer, &beginInfo) != VK_SUCCESS)
-        {
-            throw std::runtime_error("Failed to begin recording command buffer");
-        }
+        H_CHECK(vkBeginCommandBuffer(mCurrentApplicationFrame->commandBuffer, &beginInfo),
+                "Failed to begin recording command buffer");
 
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -600,10 +574,8 @@ void Application::Run()
 
         TracyVkCollect(mCurrentApplicationFrame->tracyContext,
                        mCurrentApplicationFrame->commandBuffer);
-        if (vkEndCommandBuffer(mCurrentApplicationFrame->commandBuffer) != VK_SUCCESS)
-        {
-            throw std::runtime_error("Failed to end recording of command buffer");
-        }
+        H_CHECK(vkEndCommandBuffer(mCurrentApplicationFrame->commandBuffer),
+                "Failed to end recording of command buffer");
 
         VkSubmitInfo submitInfo = init::submitInfo(&mCurrentApplicationFrame->commandBuffer);
         std::array<VkSemaphore, 1> waitSemaphores = {
@@ -618,11 +590,9 @@ void Application::Run()
         submitInfo.signalSemaphoreCount = signalSemaphores.size();
         submitInfo.pSignalSemaphores    = signalSemaphores.data();
 
-        if (vkQueueSubmit(mGraphicsQueue, 1, &submitInfo,
-                          mCurrentApplicationFrame->inFlightFence) != VK_SUCCESS)
-        {
-            throw std::runtime_error("Failed to submit draw command buffer");
-        }
+        H_CHECK(
+            vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mCurrentApplicationFrame->inFlightFence),
+            "Failed to submit draw command buffer");
 
         VkPresentInfoKHR presentInfo             = init::presentInfo();
         presentInfo.waitSemaphoreCount           = 1;
@@ -640,10 +610,7 @@ void Application::Run()
             SetFramebufferResized(false);
             recreateSwapchain();
         }
-        else if (presentResult != VK_SUCCESS)
-        {
-            throw std::runtime_error("Failed to present swapchain image");
-        }
+        H_ASSERT(presentResult == VK_SUCCESS, "Failed to present swapchain image");
 
         mCurrentFrameIndex       = (1 + mCurrentFrameIndex) % kMaxFramesInFlight;
         mCurrentApplicationFrame = &mFrames[mCurrentFrameIndex];
@@ -658,10 +625,8 @@ void Application::Run()
 
 void Application::createInstance()
 {
-    if (kEnableValidationLayers && !checkValidationLayerSupport())
-    {
-        throw std::runtime_error("Validation layers were requested, but not available for use");
-    }
+    H_ASSERT(!kEnableValidationLayers || checkValidationLayerSupport(),
+             "Validation layers were requested, but not available for use");
 
     VkApplicationInfo appInfo{};
     appInfo.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -694,10 +659,7 @@ void Application::createInstance()
     createInfo.enabledExtensionCount   = static_cast<uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
 
-    if (vkCreateInstance(&createInfo, nullptr, &mInstance) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create VkInstance");
-    }
+    H_CHECK(vkCreateInstance(&createInfo, nullptr, &mInstance), "Failed to create VkInstance");
 
     mDeleters.emplace_back([this] { vkDestroyInstance(mInstance, nullptr); });
 
@@ -716,11 +678,8 @@ void Application::setupDebugMessenger()
     VkDebugUtilsMessengerCreateInfoEXT createInfo{};
     populateDebugMessengerCreateInfo(createInfo);
 
-    if (CreateDebugUtilsMessengerEXT(mInstance, &createInfo, nullptr, &mDebugMessenger) !=
-        VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to setup debug messenger");
-    }
+    H_CHECK(CreateDebugUtilsMessengerEXT(mInstance, &createInfo, nullptr, &mDebugMessenger),
+            "Failed to setup debug messenger");
 
     mDeleters.emplace_back(
         [this]() { DestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr); });
@@ -728,10 +687,8 @@ void Application::setupDebugMessenger()
 
 void Application::createSurface()
 {
-    if (glfwCreateWindowSurface(mInstance, mWindow, nullptr, &mSurface) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create window surface");
-    }
+    H_CHECK(glfwCreateWindowSurface(mInstance, mWindow, nullptr, &mSurface),
+            "Failed to create window surface");
 
     mDeleters.emplace_back([this]() { vkDestroySurfaceKHR(mInstance, mSurface, nullptr); });
 }
@@ -802,10 +759,7 @@ void Application::pickPhysicalDevice()
 {
     uint32_t candidateDeviceCount = 0;
     vkEnumeratePhysicalDevices(mInstance, &candidateDeviceCount, nullptr);
-    if (candidateDeviceCount == 0)
-    {
-        throw std::runtime_error("Failed to find GPUs with Vulkan support");
-    }
+    H_ASSERT(candidateDeviceCount > 0, "Failed to find GPUs with Vulkan support");
     std::vector<VkPhysicalDevice> candidateDevices(candidateDeviceCount);
     vkEnumeratePhysicalDevices(mInstance, &candidateDeviceCount, candidateDevices.data());
 
@@ -818,10 +772,7 @@ void Application::pickPhysicalDevice()
         }
     }
 
-    if (mPhysicalDevice == VK_NULL_HANDLE)
-    {
-        throw std::runtime_error("Failed to find a suitable GPU");
-    }
+    H_ASSERT(mPhysicalDevice != VK_NULL_HANDLE, "Failed to find a suitable GPU");
 
     vkGetPhysicalDeviceProperties(mPhysicalDevice, &mGpuProperties);
 }
@@ -868,10 +819,8 @@ void Application::createLogicalDevice()
         createInfo.ppEnabledLayerNames = kValidationLayers.data();
     }
 
-    if (vkCreateDevice(mPhysicalDevice, &createInfo, nullptr, &mDevice) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Unable to create logical device");
-    }
+    H_CHECK(vkCreateDevice(mPhysicalDevice, &createInfo, nullptr, &mDevice),
+            "Unable to create logical device");
 
     mDeleters.emplace_back([this]() { vkDestroyDevice(mDevice, nullptr); });
 
@@ -925,10 +874,8 @@ void Application::createSwapchain()
     createInfo.clipped        = VK_TRUE;
     createInfo.oldSwapchain   = VK_NULL_HANDLE;
 
-    if (vkCreateSwapchainKHR(mDevice, &createInfo, nullptr, &mSwapchain) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create swapchain");
-    }
+    H_CHECK(vkCreateSwapchainKHR(mDevice, &createInfo, nullptr, &mSwapchain),
+            "Failed to create swapchain");
 
     vkGetSwapchainImagesKHR(mDevice, mSwapchain, &imageCount, nullptr);
     mSwapchainImages.resize(imageCount);
@@ -950,11 +897,8 @@ void Application::createSwapchainImageViews()
         createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        if (vkCreateImageView(mDevice, &createInfo, nullptr, &mSwapchainImageViews[i]) !=
-            VK_SUCCESS)
-        {
-            throw std::runtime_error("Failed to create swapchain image view");
-        }
+        H_CHECK(vkCreateImageView(mDevice, &createInfo, nullptr, &mSwapchainImageViews[i]),
+                "Failed to create swapchain image view");
     }
 }
 
@@ -966,10 +910,8 @@ VkShaderModule Application::createShaderModule(const std::vector<char> &code)
     createInfo.pCode    = reinterpret_cast<const uint32_t *>(code.data());
 
     VkShaderModule shaderModule;
-    if (vkCreateShaderModule(mDevice, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create shader module");
-    }
+    H_CHECK(vkCreateShaderModule(mDevice, &createInfo, nullptr, &shaderModule),
+            "Failed to create shader module");
 
     return shaderModule;
 }
@@ -980,10 +922,8 @@ void Application::createCommandPool()
 
     VkCommandPoolCreateInfo poolInfo = init::commandPoolInfo(
         *queueFamilyIndices.graphicsFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-    if (vkCreateCommandPool(mDevice, &poolInfo, nullptr, &mCommandPool) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create command pool");
-    }
+    H_CHECK(vkCreateCommandPool(mDevice, &poolInfo, nullptr, &mCommandPool),
+            "Failed to create command pool");
 
     mDeleters.emplace_back([this]() { vkDestroyCommandPool(mDevice, mCommandPool, nullptr); });
 }
@@ -994,10 +934,8 @@ void Application::createCommandBuffers()
 
     VkCommandBufferAllocateInfo allocInfo =
         init::commandBufferAllocInfo(mCommandPool, static_cast<uint32_t>(commandBuffers.size()));
-    if (vkAllocateCommandBuffers(mDevice, &allocInfo, commandBuffers.data()) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to allocate command buffer");
-    }
+    H_CHECK(vkAllocateCommandBuffers(mDevice, &allocInfo, commandBuffers.data()),
+            "Failed to allocate command buffer");
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
@@ -1028,15 +966,14 @@ void Application::createSyncObjects()
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
-        if (vkCreateSemaphore(mDevice, &semaphoreCreateInfo, nullptr,
-                              &mFrames[i].imageAvailableSemaphore) != VK_SUCCESS ||
-            vkCreateSemaphore(mDevice, &semaphoreCreateInfo, nullptr,
-                              &mFrames[i].renderFinishedSemaphore) != VK_SUCCESS ||
-            vkCreateFence(mDevice, &fenceCreateInfo, nullptr, &mFrames[i].inFlightFence) !=
-                VK_SUCCESS)
-        {
-            throw std::runtime_error("Failed to create sync objects");
-        }
+        H_CHECK(vkCreateSemaphore(mDevice, &semaphoreCreateInfo, nullptr,
+                                  &mFrames[i].imageAvailableSemaphore),
+                "Failed to create sync object");
+        H_CHECK(vkCreateSemaphore(mDevice, &semaphoreCreateInfo, nullptr,
+                                  &mFrames[i].renderFinishedSemaphore),
+                "Failed to create sync object");
+        H_CHECK(vkCreateFence(mDevice, &fenceCreateInfo, nullptr, &mFrames[i].inFlightFence),
+                "Failed to create sync object");
     }
 
     mDeleters.emplace_back([this]() {

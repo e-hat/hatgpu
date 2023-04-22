@@ -13,8 +13,7 @@ namespace glm
 {
 void from_json(const json &j, ::glm::vec3 &v)
 {
-    if (!j.is_array())
-        throw std::runtime_error("JSON Parse error: expected array type for vec3");
+    H_ASSERT(j.is_array(), "JSON Parse error: expected array type for vec3");
 
     v.x = j.at(0).get<float>();
     v.y = j.at(1).get<float>();
@@ -39,10 +38,7 @@ void from_json(const json &j, DirLight &d)
 void Scene::loadFromJson(const std::string &path, hatgpu::TextureManager &textureManager)
 {
     std::ifstream inputFile(path);
-    if (!inputFile.is_open())
-    {
-        throw std::runtime_error("Failed to load scene from JSON file");
-    }
+    H_ASSERT(inputFile.is_open(), "Failed to load scene from JSON file");
 
     json j = json::parse(inputFile);
 

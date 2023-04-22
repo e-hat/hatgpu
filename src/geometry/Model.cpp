@@ -42,11 +42,9 @@ void Model::loadFromObj(const std::string &filename, TextureManager &manager)
                                         aiProcess_OptimizeMeshes | aiProcess_OptimizeGraph |
                                         aiProcess_ForceGenNormals | aiProcess_FlipWindingOrder);
 
-    if (scene == nullptr || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE ||
-        scene->mRootNode == nullptr)
-    {
-        throw std::runtime_error(std::string("Failed to load mesh from ") + filename);
-    }
+    H_ASSERT(scene != nullptr && !(scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) &&
+                 scene->mRootNode != nullptr,
+             std::string("Failed to load mesh from ") + filename);
 
     // Group meshes by material
     meshes.resize(scene->mNumMaterials - 1);

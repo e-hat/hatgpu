@@ -22,10 +22,7 @@ std::vector<char> readFile(const std::string &filename)
 {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
-    if (!file.is_open())
-    {
-        throw std::runtime_error("Failed to open file");
-    }
+    H_ASSERT(file.is_open(), "Failed to open file");
 
     size_t fileSize = static_cast<size_t>(file.tellg());
     std::vector<char> buffer(fileSize);
@@ -78,10 +75,7 @@ void HatGpuRenderer::Init()
     allocatorInfo.device                 = mDevice;
     allocatorInfo.instance               = mInstance;
 
-    if (vmaCreateAllocator(&allocatorInfo, &mAllocator) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create VMA allocator");
-    }
+    H_CHECK(vmaCreateAllocator(&allocatorInfo, &mAllocator), "Failed to create VMA allocator");
 
     mDeleters.emplace_back([this]() { vmaDestroyAllocator(mAllocator); });
 
@@ -125,11 +119,8 @@ void HatGpuRenderer::createFramebuffers(const VkRenderPass &renderPass)
         framebufferInfo.attachmentCount = attachments.size();
         framebufferInfo.pAttachments    = attachments.data();
 
-        if (vkCreateFramebuffer(mDevice, &framebufferInfo, nullptr, &mSwapchainFramebuffers[i]) !=
-            VK_SUCCESS)
-        {
-            throw std::runtime_error("Failed to create framebuffer");
-        }
+        H_CHECK(vkCreateFramebuffer(mDevice, &framebufferInfo, nullptr, &mSwapchainFramebuffers[i]),
+                "Failed to create framebuffer");
     }
 }
 
@@ -145,18 +136,14 @@ void HatGpuRenderer::createDepthImage()
     VmaAllocationCreateInfo allocationInfo{};
     allocationInfo.usage         = VMA_MEMORY_USAGE_GPU_ONLY;
     allocationInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (vmaCreateImage(mAllocator, &imageInfo, &allocationInfo, &mDepthImage.image,
-                       &mDepthImage.allocation, nullptr) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to allocate depth image");
-    }
+    H_CHECK(vmaCreateImage(mAllocator, &imageInfo, &allocationInfo, &mDepthImage.image,
+                           &mDepthImage.allocation, nullptr),
+            "Failed to allocate depth image");
 
     VkImageViewCreateInfo viewInfo =
         init::imageViewInfo(kDepthFormat, mDepthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT);
-    if (vkCreateImageView(mDevice, &viewInfo, nullptr, &mDepthImageView) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create depth image view");
-    }
+    H_CHECK(vkCreateImageView(mDevice, &viewInfo, nullptr, &mDepthImageView),
+            "Failed to create depth image view");
 
     mDeleters.emplace_back([this]() {
         vkDestroyImageView(mDevice, mDepthImageView, nullptr);
@@ -202,11 +189,8 @@ void HatGpuRenderer::createDescriptors()
     globalCreateInfo.pBindings    = layoutBindings.data();
     globalCreateInfo.flags        = 0;
 
-    if (vkCreateDescriptorSetLayout(mDevice, &globalCreateInfo, nullptr, &mGlobalSetLayout) !=
-        VK_SUCCESS)
-    {
-        throw std::runtime_error("Unable to create global descriptor set layout");
-    }
+    H_CHECK(vkCreateDescriptorSetLayout(mDevice, &globalCreateInfo, nullptr, &mGlobalSetLayout),
+            "Unable to create global descriptor set layout");
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
@@ -389,11 +373,9 @@ void HatGpuRenderer::createGraphicsPipeline()
     pipelineLayoutCreateInfo.setLayoutCount             = layouts.size();
     pipelineLayoutCreateInfo.pSetLayouts                = layouts.data();
 
-    if (vkCreatePipelineLayout(mDevice, &pipelineLayoutCreateInfo, nullptr,
-                               &mGraphicsPipelineLayout) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create pipeline layout object");
-    }
+    H_CHECK(vkCreatePipelineLayout(mDevice, &pipelineLayoutCreateInfo, nullptr,
+                                   &mGraphicsPipelineLayout),
+            "Failed to create pipeline layout object");
 
     mDeleters.emplace_back(
         [this]() { vkDestroyPipelineLayout(mDevice, mGraphicsPipelineLayout, nullptr); });
@@ -423,11 +405,9 @@ void HatGpuRenderer::createGraphicsPipeline()
     pipelineInfo.renderPass = mRenderPass;
     pipelineInfo.subpass    = 0;
 
-    if (vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
-                                  &mGraphicsPipeline) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create graphics pipeline");
-    }
+    H_CHECK(vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
+                                      &mGraphicsPipeline),
+            "Failed to create graphics pipeline");
 
     mDeleters.emplace_back([this]() { vkDestroyPipeline(mDevice, mGraphicsPipeline, nullptr); });
 
@@ -504,10 +484,8 @@ void HatGpuRenderer::createRenderPass()
     renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
     renderPassInfo.pDependencies   = dependencies.data();
 
-    if (vkCreateRenderPass(mDevice, &renderPassInfo, nullptr, &mRenderPass) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create render pass");
-    }
+    H_CHECK(vkCreateRenderPass(mDevice, &renderPassInfo, nullptr, &mRenderPass),
+            "Failed to create render pass");
 
     mDeleters.emplace_back([this]() { vkDestroyRenderPass(mDevice, mRenderPass, nullptr); });
 }
@@ -530,11 +508,9 @@ AllocatedBuffer HatGpuRenderer::createBuffer(size_t allocSize,
     AllocatedBuffer newBuffer;
 
     // allocate the buffer
-    if (vmaCreateBuffer(mAllocator, &bufferInfo, &vmaAllocInfo, &newBuffer.buffer,
-                        &newBuffer.allocation, nullptr) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to allocate new buffer");
-    }
+    H_CHECK(vmaCreateBuffer(mAllocator, &bufferInfo, &vmaAllocInfo, &newBuffer.buffer,
+                            &newBuffer.allocation, nullptr),
+            "Failed to allocate new buffer");
 
     return newBuffer;
 }
@@ -557,11 +533,9 @@ void HatGpuRenderer::uploadMesh(Mesh &mesh)
 
     AllocatedBuffer stagingBuffer;
 
-    if (vmaCreateBuffer(mAllocator, &stagingBufferInfo, &vmaAllocInfo, &stagingBuffer.buffer,
-                        &stagingBuffer.allocation, nullptr) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create staging buffer for mesh data");
-    }
+    H_CHECK(vmaCreateBuffer(mAllocator, &stagingBufferInfo, &vmaAllocInfo, &stagingBuffer.buffer,
+                            &stagingBuffer.allocation, nullptr),
+            "Failed to create staging buffer for mesh data");
 
     void *data;
     vmaMapMemory(mAllocator, stagingBuffer.allocation, &data);
@@ -577,11 +551,9 @@ void HatGpuRenderer::uploadMesh(Mesh &mesh)
     vboInfo.usage      = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     vmaAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    if (vmaCreateBuffer(mAllocator, &vboInfo, &vmaAllocInfo, &mesh.vertexBuffer.buffer,
-                        &mesh.vertexBuffer.allocation, nullptr) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to allocate vertex buffer");
-    }
+    H_CHECK(vmaCreateBuffer(mAllocator, &vboInfo, &vmaAllocInfo, &mesh.vertexBuffer.buffer,
+                            &mesh.vertexBuffer.allocation, nullptr),
+            "Failed to allocate vertex buffer");
 
     VkBufferCreateInfo iboInfo{};
     iboInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -589,11 +561,9 @@ void HatGpuRenderer::uploadMesh(Mesh &mesh)
     iboInfo.size  = indicesSize;
     iboInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
-    if (vmaCreateBuffer(mAllocator, &iboInfo, &vmaAllocInfo, &mesh.indexBuffer.buffer,
-                        &mesh.indexBuffer.allocation, nullptr) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to allocate index buffer");
-    }
+    H_CHECK(vmaCreateBuffer(mAllocator, &iboInfo, &vmaAllocInfo, &mesh.indexBuffer.buffer,
+                            &mesh.indexBuffer.allocation, nullptr),
+            "Failed to allocate index buffer");
 
     immediateSubmit([=](VkCommandBuffer cmd) {
         VkBufferCopy vboCopy{};
@@ -624,11 +594,9 @@ void HatGpuRenderer::uploadTextures(Mesh &mesh)
     VkFormatProperties formatProperties;
     vkGetPhysicalDeviceFormatProperties(mPhysicalDevice, VK_FORMAT_R8G8B8A8_SRGB,
                                         &formatProperties);
-    if (!(formatProperties.optimalTilingFeatures &
-          VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
-    {
-        throw std::runtime_error("Texture image format does not support linear blitting");
-    }
+    H_ASSERT(
+        formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT,
+        "Texture image format does not support linear blitting");
 
     // Each mesh has its own descriptor set allocated from the global pool
     VkDescriptorSetAllocateInfo textureDescriptorInfo{};
