@@ -7,6 +7,7 @@
 /bin/*
 /bin-int/*
 build/**
+ninja-build/**
 vendor/Glad/bin-int/*
 .idea/**
 cmake-build-debug/**
