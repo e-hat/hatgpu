@@ -10,12 +10,6 @@
 #include <assimp/scene.h>
 #include <assimp/Importer.hpp>
 
-#ifdef DEBUG_BUILD
-#    define STBI_NO_SIMD
-#endif
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
-
 #include <iostream>
 
 namespace hatgpu
@@ -54,27 +48,6 @@ void processNode(aiNode *node, const aiScene *scene, std::vector<Vertex> &vertic
 }
 }  // namespace
 
-void TextureManager::loadTexture(const std::string &file)
-{
-    if (textures.contains(file))
-    {
-        return;
-    }
-
-    int width, height, channels;
-    stbi_uc *ucPixels = stbi_load(file.c_str(), &width, &height, &channels, STBI_rgb_alpha);
-
-    H_ASSERT(ucPixels != nullptr, std::string("Failed to load texture file: ") + file);
-
-    auto result    = std::make_shared<Texture>(static_cast<void *>(ucPixels), width, height);
-    textures[file] = std::move(result);
-}
-
-Texture::~Texture()
-{
-    stbi_image_free(pixels);
-}
-
 bool Mesh::loadFromObj(const std::string &filename)
 {
     Assimp::Importer importer;
@@ -85,7 +58,6 @@ bool Mesh::loadFromObj(const std::string &filename)
     if (scene == nullptr || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE ||
         scene->mRootNode == nullptr)
     {
-        std::cerr << "Failed to load mesh from '" << filename << "'\n";
         return false;
     }
 

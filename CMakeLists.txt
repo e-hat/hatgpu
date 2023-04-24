@@ -16,10 +16,10 @@ set(SOURCES ${SOURCES}
         ${SOURCE_DIR}/hatpch.cpp
         ${SOURCE_DIR}/application/Application.h
         ${SOURCE_DIR}/application/Application.cpp
-        ${SOURCE_DIR}/application/ForwardRenderer.h
-        ${SOURCE_DIR}/application/ForwardRenderer.cpp
         ${SOURCE_DIR}/application/InputManager.h
         ${SOURCE_DIR}/application/InputManager.cpp
+        ${SOURCE_DIR}/renderers/ForwardRenderer.h
+        ${SOURCE_DIR}/renderers/ForwardRenderer.cpp
         ${SOURCE_DIR}/util/Time.h
         ${SOURCE_DIR}/util/Time.cpp
         ${SOURCE_DIR}/util/Random.h 
@@ -38,7 +38,9 @@ set(SOURCES ${SOURCES}
         ${SOURCE_DIR}/vk/allocator.cpp
         ${SOURCE_DIR}/vk/upload_context.h
         ${SOURCE_DIR}/vk/upload_context.cpp
-        ${SOURCE_DIR}/vk/deleter.h)
+        ${SOURCE_DIR}/vk/deleter.h
+        ${SOURCE_DIR}/texture/Texture.h
+        ${SOURCE_DIR}/texture/Texture.cpp)
 add_executable(hatgpu ${SOURCES})
 
 set(INCLUDES ${SOURCE_DIR})

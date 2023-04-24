@@ -2,7 +2,7 @@
 #define _INCLUDE_MESH_H
 #include "hatpch.h"
 
-#include "geometry/Texture.h"
+#include "texture/Texture.h"
 #include "vk/allocator.h"
 #include "vk/types.h"
 #include "vk/upload_context.h"

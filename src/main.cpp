@@ -1,5 +1,6 @@
-#include "application/ForwardRenderer.h"
+#include "application/Application.h"
 #include "hatpch.h"
+#include "renderers/ForwardRenderer.h"
 
 int main()
 {

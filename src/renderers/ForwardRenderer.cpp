@@ -1,8 +1,8 @@
 #include "hatpch.h"
 
 #include "ForwardRenderer.h"
-#include "geometry/Texture.h"
 #include "imgui.h"
+#include "texture/Texture.h"
 #include "util/Random.h"
 #include "vk/initializers.h"
 #include "vk/shader.h"

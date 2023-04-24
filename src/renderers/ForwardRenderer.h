@@ -4,9 +4,9 @@
 
 #include "application/Application.h"
 #include "geometry/Model.h"
-#include "geometry/Texture.h"
 #include "scene/Camera.h"
 #include "scene/Scene.h"
+#include "texture/Texture.h"
 #include "vk/allocator.h"
 #include "vk/deleter.h"
 #include "vk/gpu_texture.h"

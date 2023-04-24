@@ -1,11 +1,38 @@
 #include "hatpch.h"
 
-#include "geometry/Texture.h"
+#include "texture/Texture.h"
 #include "vk/gpu_texture.h"
 #include "vk/initializers.h"
 
+#ifdef DEBUG_BUILD
+#    define STBI_NO_SIMD
+#endif
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 namespace hatgpu
 {
+void TextureManager::loadTexture(const std::string &file)
+{
+    if (textures.contains(file))
+    {
+        return;
+    }
+
+    int width, height, channels;
+    stbi_uc *ucPixels = stbi_load(file.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+
+    H_ASSERT(ucPixels != nullptr, std::string("Failed to load texture file: ") + file);
+
+    auto result    = std::make_shared<Texture>(static_cast<void *>(ucPixels), width, height);
+    textures[file] = std::move(result);
+}
+
+Texture::~Texture()
+{
+    stbi_image_free(pixels);
+}
+
 vk::GpuTexture Texture::upload(VkDevice device,
                                vk::Allocator &allocator,
                                vk::UploadContext &context)
