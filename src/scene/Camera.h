@@ -25,7 +25,7 @@ enum class CameraMovement
     SPIN_RIGHT,
 };
 
-static constexpr float kSpeed             = 10.F;
+static constexpr float kSpeed             = 5.f;
 static constexpr float kSensitivity       = 0.001f;
 static constexpr float kMouseVelocity     = 45.f;
 static constexpr float kMaxMouseVelocity  = 0.01f;
@@ -33,7 +33,7 @@ static constexpr float kMinMouseVelocity  = -kMaxMouseVelocity;
 static constexpr float kZoomVelocity      = 1.0f;
 static constexpr float kMinTargetDistance = 0.1f;
 static constexpr float kMaxTargetDistance = 100.f;
-static constexpr float kAngularVelocity   = 2.5f;
+static constexpr float kAngularVelocity   = 1.f;
 static constexpr float kMaxSpinDistance   = 0.1f;
 
 class Camera
