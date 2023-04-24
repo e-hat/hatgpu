@@ -11,7 +11,7 @@ git clone --recurse-submodules https://github.com/e-hat/hatgpu.git
 ```
 Build it (for Linux):
 ```bash
-mkdir build && build
+mkdir build && cd build
 cmake .. # or `cmake -G Ninja ..`
 make # or `ninja`
 ```
