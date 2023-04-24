@@ -4,10 +4,12 @@
 
 #include "application/Application.h"
 #include "geometry/Model.h"
+#include "geometry/Texture.h"
 #include "scene/Camera.h"
 #include "scene/Scene.h"
 #include "vk/allocator.h"
 #include "vk/deleter.h"
+#include "vk/gpu_texture.h"
 #include "vk/types.h"
 
 #include <glm/glm.hpp>
@@ -72,13 +74,7 @@ class ForwardRenderer : public Application
     std::array<FrameData, kMaxFramesInFlight> mFrames;
 
     TextureManager mTextureManager;
-    struct GpuTexture
-    {
-        vk::AllocatedImage image;
-        VkImageView imageView;
-        uint32_t mipLevels;
-    };
-    std::unordered_map<std::string, GpuTexture> mGpuTextures;
+    std::unordered_map<std::string, vk::GpuTexture> mGpuTextures;
 
     uint32_t mFrameCount{0};
 

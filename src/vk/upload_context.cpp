@@ -4,33 +4,22 @@
 #include "vk/initializers.h"
 #include "vk/upload_context.h"
 
+#include <iostream>
+
 namespace hatgpu
 {
 namespace vk
 {
-UploadContext::UploadContext(VkDevice device,
-                             VkQueue graphicsQueue,
-                             uint32_t graphicsQueueIndex,
-                             DeletionQueue &deleter)
+UploadContext::UploadContext(VkDevice device, VkQueue graphicsQueue, uint32_t graphicsQueueIndex)
     : device(device), graphicsQueue(graphicsQueue)
 {
     VkFenceCreateInfo uploadFenceCreateInfo = vk::fenceInfo();
     H_CHECK(vkCreateFence(device, &uploadFenceCreateInfo, nullptr, &uploadFence),
             "Failed to create upload context fence");
 
-    deleter.enqueue([this]() {
-        H_LOG("...destroying upload context fence");
-        vkDestroyFence(this->device, uploadFence, nullptr);
-    });
-
     VkCommandPoolCreateInfo commandPoolCreateInfo = vk::commandPoolInfo(graphicsQueueIndex);
     H_CHECK(vkCreateCommandPool(this->device, &commandPoolCreateInfo, nullptr, &commandPool),
             "Failed to create upload context command pool");
-
-    deleter.enqueue([this]() {
-        H_LOG("...destroying upload context command pool");
-        vkDestroyCommandPool(this->device, commandPool, nullptr);
-    });
 
     VkCommandBufferAllocateInfo commandBufferAllocInfo = vk::commandBufferAllocInfo(commandPool);
     H_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocInfo, &commandBuffer),
@@ -55,6 +44,13 @@ void UploadContext::immediateSubmit(std::function<void(VkCommandBuffer)> &&funct
     vkResetFences(device, 1, &uploadFence);
 
     vkResetCommandPool(device, commandPool, 0);
+}
+
+void UploadContext::destroy()
+{
+    H_LOG("...destroying upload context");
+    vkDestroyFence(device, uploadFence, nullptr);
+    vkDestroyCommandPool(device, commandPool, nullptr);
 }
 }  // namespace vk
 }  // namespace hatgpu

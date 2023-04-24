@@ -12,7 +12,7 @@ namespace vk
 struct Allocator
 {
     Allocator() = default;
-    Allocator(VmaAllocatorCreateInfo create, DeletionQueue &deleter);
+    Allocator(VmaAllocatorCreateInfo create);
 
     AllocatedBuffer createBuffer(size_t allocSize,
                                  VkBufferUsageFlags usage,
@@ -22,7 +22,9 @@ struct Allocator
 
     void *map(const AllocatedBuffer &buf);
     void unmap(const AllocatedBuffer &buf);
+
     void destroyBuffer(const AllocatedBuffer &buf);
+    void destroyImage(const AllocatedImage &img);
 
     VmaAllocator Impl = VK_NULL_HANDLE;
 };

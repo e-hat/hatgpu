@@ -9,6 +9,10 @@
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 #include <assimp/Importer.hpp>
+
+#ifdef DEBUG_BUILD
+#    define STBI_NO_SIMD
+#endif
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
@@ -108,7 +112,7 @@ void Mesh::upload(vk::Allocator &allocator, vk::UploadContext &context)
         verticesSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VMA_MEMORY_USAGE_GPU_ONLY);
     indexBuffer = allocator.createBuffer(
-        verticesSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        indicesSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VMA_MEMORY_USAGE_GPU_ONLY);
 
     context.immediateSubmit([=, this](VkCommandBuffer cmd) {

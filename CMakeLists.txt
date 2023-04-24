@@ -93,7 +93,10 @@ target_include_directories(hatgpu PRIVATE ${Vulkan_INCLUDE_DIRS})
 target_precompile_headers(hatgpu PRIVATE ${SOURCE_DIR}/hatpch.h)
 
 # target_compile_definitions(hatgpu PRIVATE DEBUG VALIDATION_DEBUG_BREAK)
+if (CMAKE_BUILD_TYPE MATCHES "Debug")
+  target_compile_definitions(hatgpu PRIVATE DEBUG_BUILD)
+endif()
 target_compile_definitions(hatgpu PRIVATE DEBUG)
 target_compile_definitions(hatgpu PUBLIC TRACY_ENABLE GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
-target_compile_options(hatgpu PRIVATE -Werror -Wall -Wextra)
+target_compile_options(hatgpu PRIVATE -Werror -Wall -Wextra -march=native)

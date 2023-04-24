@@ -90,6 +90,7 @@ debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
         // use std::endl to flush the stream, else errors might pop up at random times during
         // execution (this actually happened :O)
         std::cerr << "HATGPU: [VULKAN VALIDATION ERROR]: " << pCallbackData->pMessage << std::endl;
+        LOGGER.error(pCallbackData->pMessage);
 #ifdef VALIDATION_DEBUG_BREAK
         __builtin_trap();
 #endif
@@ -313,7 +314,8 @@ void Application::initVulkan()
     createCommandBuffers();
     createTracyContexts();
     H_LOG("...creating upload context");
-    mUploadContext = vk::UploadContext(mDevice, mGraphicsQueue, mGraphicsQueueIndex, mDeleter);
+    mUploadContext = vk::UploadContext(mDevice, mGraphicsQueue, mGraphicsQueueIndex);
+    mDeleter.enqueue([this]() { mUploadContext.destroy(); });
 }
 
 void Application::initImGui()
@@ -488,7 +490,7 @@ void Application::Run()
                 recreateSwapchain();
                 return;
             }
-            H_ASSERT(nextImageResult != VK_SUCCESS && nextImageResult != VK_SUBOPTIMAL_KHR,
+            H_ASSERT(nextImageResult == VK_SUCCESS && nextImageResult != VK_SUBOPTIMAL_KHR,
                      "Failed to acquire swapchain image");
         }
         vkResetFences(mDevice, 1, &mCurrentApplicationFrame->inFlightFence);

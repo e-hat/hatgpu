@@ -9,14 +9,9 @@ namespace hatgpu
 {
 namespace vk
 {
-Allocator::Allocator(VmaAllocatorCreateInfo create, DeletionQueue &deleter)
+Allocator::Allocator(VmaAllocatorCreateInfo create)
 {
     H_CHECK(vmaCreateAllocator(&create, &Impl), "Failed to create allocator");
-
-    deleter.enqueue([this]() {
-        H_LOG("...destroying allocator");
-        vmaDestroyAllocator(Impl);
-    });
 }
 
 AllocatedBuffer Allocator::createBuffer(size_t allocSize,
@@ -59,6 +54,11 @@ void Allocator::unmap(const AllocatedBuffer &buf)
 void Allocator::destroyBuffer(const AllocatedBuffer &buf)
 {
     vmaDestroyBuffer(Impl, buf.buffer, buf.allocation);
+}
+
+void Allocator::destroyImage(const AllocatedImage &img)
+{
+    vmaDestroyImage(Impl, img.image, img.allocation);
 }
 }  // namespace vk
 }  // namespace hatgpu

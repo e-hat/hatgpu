@@ -2,6 +2,7 @@
 #define _INCLUDE_MESH_H
 #include "hatpch.h"
 
+#include "geometry/Texture.h"
 #include "vk/allocator.h"
 #include "vk/types.h"
 #include "vk/upload_context.h"
@@ -51,42 +52,6 @@ struct Vertex
 
         return attributeDescriptions;
     }
-};
-
-struct Texture
-{
-    Texture(void *pixels, uint32_t width, uint32_t height)
-        : pixels(pixels), width(width), height(height)
-    {}
-    ~Texture();
-
-    Texture(const Texture &other)            = delete;
-    Texture &operator=(const Texture &other) = delete;
-
-    Texture(Texture &&other) noexcept : pixels(other.pixels) { other.pixels = nullptr; }
-    Texture &operator=(Texture &&other) noexcept
-    {
-        pixels       = other.pixels;
-        other.pixels = nullptr;
-        return *this;
-    }
-
-    void *pixels;
-    uint32_t width;
-    uint32_t height;
-};
-
-// Caches and manages CPU texture data
-struct TextureManager
-{
-    void loadTexture(const std::string &file);
-    std::unordered_map<std::string, std::shared_ptr<Texture>> textures;
-};
-
-enum class TextureType
-{
-    ALBEDO,
-    METALLIC_ROUGHNESS,
 };
 
 struct Mesh
