@@ -2,6 +2,10 @@
 
 #include "Mesh.h"
 
+#include "vk/allocator.h"
+#include "vk/types.h"
+#include "vk/upload_context.h"
+
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 #include <assimp/Importer.hpp>
@@ -83,5 +87,50 @@ bool Mesh::loadFromObj(const std::string &filename)
 
     processNode(scene->mRootNode, scene, vertices);
     return true;
+}
+
+void Mesh::upload(vk::Allocator &allocator, vk::UploadContext &context)
+{
+    // Uploading the vertex data followed by the index data in contiguous memory
+    const size_t verticesSize = vertices.size() * sizeof(Vertex);
+    const size_t indicesSize  = indices.size() * sizeof(Mesh::IndexType);
+    const size_t bufferSize   = verticesSize + indicesSize;
+
+    vk::AllocatedBuffer stagingBuffer = allocator.createBuffer(
+        bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+
+    void *data = allocator.map(stagingBuffer);
+    std::memcpy(data, vertices.data(), verticesSize);
+    std::memcpy(static_cast<char *>(data) + verticesSize, indices.data(), indicesSize);
+    allocator.unmap(stagingBuffer);
+
+    vertexBuffer = allocator.createBuffer(
+        verticesSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY);
+    indexBuffer = allocator.createBuffer(
+        verticesSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY);
+
+    context.immediateSubmit([=, this](VkCommandBuffer cmd) {
+        VkBufferCopy vboCopy{};
+        vboCopy.dstOffset = 0;
+        vboCopy.srcOffset = 0;
+        vboCopy.size      = verticesSize;
+        vkCmdCopyBuffer(cmd, stagingBuffer.buffer, vertexBuffer.buffer, 1, &vboCopy);
+
+        VkBufferCopy iboCopy{};
+        iboCopy.dstOffset = 0;
+        iboCopy.srcOffset = verticesSize;
+        iboCopy.size      = indicesSize;
+        vkCmdCopyBuffer(cmd, stagingBuffer.buffer, indexBuffer.buffer, 1, &iboCopy);
+    });
+
+    allocator.destroyBuffer(stagingBuffer);
+}
+
+void Mesh::destroyBuffers(vk::Allocator &allocator)
+{
+    allocator.destroyBuffer(vertexBuffer);
+    allocator.destroyBuffer(indexBuffer);
 }
 }  // namespace hatgpu

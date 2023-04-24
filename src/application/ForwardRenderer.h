@@ -44,14 +44,9 @@ class ForwardRenderer : public Application
     void loadSceneFromDisk();
     void uploadSceneToGpu();
 
-    vk::AllocatedBuffer createBuffer(size_t allocSize,
-                                     VkBufferUsageFlags usage,
-                                     VmaMemoryUsage memoryUsage);
-
     void drawObjects(const VkCommandBuffer &commandBuffer);
     void recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex);
 
-    void uploadMesh(Mesh &mesh);
     void uploadTextures(Mesh &mesh);
 
     VkRenderPass mRenderPass;

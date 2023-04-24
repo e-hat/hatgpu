@@ -489,50 +489,6 @@ void ForwardRenderer::createRenderPass()
     });
 }
 
-void ForwardRenderer::uploadMesh(Mesh &mesh)
-{
-    // Uploading the vertex data followed by the index data in contiguous memory
-    const size_t verticesSize = mesh.vertices.size() * sizeof(Vertex);
-    const size_t indicesSize  = mesh.indices.size() * sizeof(Mesh::IndexType);
-    const size_t bufferSize   = verticesSize + indicesSize;
-
-    vk::AllocatedBuffer stagingBuffer = mAllocator.createBuffer(
-        bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
-
-    void *data = mAllocator.map(stagingBuffer);
-    std::memcpy(data, mesh.vertices.data(), verticesSize);
-    std::memcpy(static_cast<char *>(data) + verticesSize, mesh.indices.data(), indicesSize);
-    mAllocator.unmap(stagingBuffer);
-
-    mesh.vertexBuffer = mAllocator.createBuffer(
-        verticesSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VMA_MEMORY_USAGE_GPU_ONLY);
-    mesh.indexBuffer = mAllocator.createBuffer(
-        verticesSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VMA_MEMORY_USAGE_GPU_ONLY);
-
-    immediateSubmit([=](VkCommandBuffer cmd) {
-        VkBufferCopy vboCopy{};
-        vboCopy.dstOffset = 0;
-        vboCopy.srcOffset = 0;
-        vboCopy.size      = verticesSize;
-        vkCmdCopyBuffer(cmd, stagingBuffer.buffer, mesh.vertexBuffer.buffer, 1, &vboCopy);
-
-        VkBufferCopy iboCopy{};
-        iboCopy.dstOffset = 0;
-        iboCopy.srcOffset = verticesSize;
-        iboCopy.size      = indicesSize;
-        vkCmdCopyBuffer(cmd, stagingBuffer.buffer, mesh.indexBuffer.buffer, 1, &iboCopy);
-    });
-
-    mDeleter.enqueue([this, mesh]() {
-        mAllocator.destroyBuffer(mesh.vertexBuffer);
-        mAllocator.destroyBuffer(mesh.indexBuffer);
-    });
-
-    mAllocator.destroyBuffer(stagingBuffer);
-}
-
 void ForwardRenderer::uploadTextures(Mesh &mesh)
 {
     // Check whether linear GPU blitting (required by mipmaps) is even supported by this hardware
@@ -596,7 +552,7 @@ void ForwardRenderer::uploadTextures(Mesh &mesh)
 
         // Use GPU commands to transfer the data from the staging buffer
         // and create the mip levels with blits
-        immediateSubmit([&](VkCommandBuffer cmd) {
+        mUploadContext.immediateSubmit([&](VkCommandBuffer cmd) {
             // Make a barrier so that we are ready to write to our destination texture
             VkImageSubresourceRange range;
             range.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -779,7 +735,9 @@ void ForwardRenderer::uploadSceneToGpu()
     {
         for (auto &mesh : renderable.model->meshes)
         {
-            uploadMesh(mesh);
+            mesh.upload(mAllocator, mUploadContext);
+            mDeleter.enqueue([this, &mesh]() { mesh.destroyBuffers(mAllocator); });
+
             uploadTextures(mesh);
         }
     }

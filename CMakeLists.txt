@@ -20,8 +20,6 @@ set(SOURCES ${SOURCES}
         ${SOURCE_DIR}/application/ForwardRenderer.cpp
         ${SOURCE_DIR}/application/InputManager.h
         ${SOURCE_DIR}/application/InputManager.cpp
-        ${SOURCE_DIR}/application/BdptRenderer.h
-        ${SOURCE_DIR}/application/BdptRenderer.cpp
         ${SOURCE_DIR}/util/Time.h
         ${SOURCE_DIR}/util/Time.cpp
         ${SOURCE_DIR}/util/Random.h 
@@ -37,7 +35,10 @@ set(SOURCES ${SOURCES}
         ${SOURCE_DIR}/vk/initializers.h
         ${SOURCE_DIR}/vk/initializers.cpp
         ${SOURCE_DIR}/vk/allocator.h
-        ${SOURCE_DIR}/vk/allocator.cpp)
+        ${SOURCE_DIR}/vk/allocator.cpp
+        ${SOURCE_DIR}/vk/upload_context.h
+        ${SOURCE_DIR}/vk/upload_context.cpp
+        ${SOURCE_DIR}/vk/deleter.h)
 add_executable(hatgpu ${SOURCES})
 
 set(INCLUDES ${SOURCE_DIR})
@@ -61,7 +62,6 @@ option(ASSIMP_WARNINGS_AS_ERRORS "" OFF)
 option(ASSIMP_NO_EXPORT "" ON)
 option(ASSIMP_BUILD_TESTS "" OFF)
 add_subdirectory(deps/assimp)
-set_target_properties(assimp PROPERTIES BUILD_SHARED_LIBS TRUE)
 target_link_libraries(hatgpu PRIVATE assimp)
 
 add_subdirectory(deps/glfw)

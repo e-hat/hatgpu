@@ -2,7 +2,9 @@
 #define _INCLUDE_MESH_H
 #include "hatpch.h"
 
+#include "vk/allocator.h"
 #include "vk/types.h"
+#include "vk/upload_context.h"
 
 #include <array>
 #include <memory>
@@ -102,6 +104,9 @@ struct Mesh
     vk::AllocatedBuffer indexBuffer;
 
     bool loadFromObj(const std::string &filename);
+
+    void upload(vk::Allocator &allocator, vk::UploadContext &context);
+    void destroyBuffers(vk::Allocator &allocator);
 };
 }  // namespace hatgpu
 

@@ -312,7 +312,8 @@ void Application::initVulkan()
     createCommandPool();
     createCommandBuffers();
     createTracyContexts();
-    createUploadContext();
+    H_LOG("...creating upload context");
+    mUploadContext = vk::UploadContext(mDevice, mGraphicsQueue, mGraphicsQueueIndex, mDeleter);
 }
 
 void Application::initImGui()
@@ -369,7 +370,8 @@ void Application::initImGui()
     ImGui_ImplVulkan_Init(&initInfo, mUiPass);
 
     // execute a gpu command to upload imgui font textures
-    immediateSubmit([&](VkCommandBuffer cmd) { ImGui_ImplVulkan_CreateFontsTexture(cmd); });
+    mUploadContext.immediateSubmit(
+        [&](VkCommandBuffer cmd) { ImGui_ImplVulkan_CreateFontsTexture(cmd); });
 
     // clear font textures from cpu data
     ImGui_ImplVulkan_DestroyFontUploadObjects();
@@ -380,57 +382,6 @@ void Application::initImGui()
         vkDestroyDescriptorPool(mDevice, imguiPool, nullptr);
         ImGui_ImplVulkan_Shutdown();
     });
-}
-
-void Application::immediateSubmit(std::function<void(VkCommandBuffer)> &&function)
-{
-    VkCommandBuffer cmd = mUploadContext.commandBuffer;
-    VkCommandBufferBeginInfo cmdBeginInfo =
-        vk::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-    H_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo), "Failed to begin command buffer");
-
-    function(cmd);
-
-    H_CHECK(vkEndCommandBuffer(cmd), "Failed to end command buffer");
-
-    VkSubmitInfo submitInfo = vk::submitInfo(&cmd);
-    H_CHECK(vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mUploadContext.uploadFence),
-            "Failed to submit to queue");
-
-    vkWaitForFences(mDevice, 1, &mUploadContext.uploadFence, true,
-                    std::numeric_limits<uint32_t>::max());
-    vkResetFences(mDevice, 1, &mUploadContext.uploadFence);
-
-    vkResetCommandPool(mDevice, mUploadContext.commandPool, 0);
-}
-
-void Application::createUploadContext()
-{
-    H_LOG("...creating upload context");
-    VkFenceCreateInfo uploadFenceCreateInfo = vk::fenceInfo();
-    H_CHECK(vkCreateFence(mDevice, &uploadFenceCreateInfo, nullptr, &mUploadContext.uploadFence),
-            "Failed to create upload context fence");
-
-    mDeleter.enqueue([this]() {
-        H_LOG("...destroying upload context fence");
-        vkDestroyFence(mDevice, mUploadContext.uploadFence, nullptr);
-    });
-
-    VkCommandPoolCreateInfo commandPoolCreateInfo = vk::commandPoolInfo(mGraphicsQueueIndex);
-    H_CHECK(
-        vkCreateCommandPool(mDevice, &commandPoolCreateInfo, nullptr, &mUploadContext.commandPool),
-        "Failed to create upload context command pool");
-
-    mDeleter.enqueue([this]() {
-        H_LOG("...destroying upload context command pool");
-        vkDestroyCommandPool(mDevice, mUploadContext.commandPool, nullptr);
-    });
-
-    VkCommandBufferAllocateInfo commandBufferAllocInfo =
-        vk::commandBufferAllocInfo(mUploadContext.commandPool);
-    H_CHECK(
-        vkAllocateCommandBuffers(mDevice, &commandBufferAllocInfo, &mUploadContext.commandBuffer),
-        "Failed to allocate upload context command buffer");
 }
 
 void Application::createUiPass()
@@ -537,7 +488,7 @@ void Application::Run()
                 recreateSwapchain();
                 return;
             }
-            H_ASSERT(nextImageResult == VK_SUCCESS && nextImageResult != VK_SUBOPTIMAL_KHR,
+            H_ASSERT(nextImageResult != VK_SUCCESS && nextImageResult != VK_SUBOPTIMAL_KHR,
                      "Failed to acquire swapchain image");
         }
         vkResetFences(mDevice, 1, &mCurrentApplicationFrame->inFlightFence);

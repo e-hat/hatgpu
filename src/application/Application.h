@@ -5,6 +5,7 @@
 #include "application/InputManager.h"
 #include "util/Time.h"
 #include "vk/deleter.h"
+#include "vk/upload_context.h"
 
 #include <tracy/TracyVulkan.hpp>
 
@@ -41,13 +42,7 @@ class Application
   protected:
     void immediateSubmit(std::function<void(VkCommandBuffer)> &&function);
 
-    struct UploadContext
-    {
-        VkFence uploadFence;
-        VkCommandPool commandPool;
-        VkCommandBuffer commandBuffer;
-    };
-    UploadContext mUploadContext;
+    vk::UploadContext mUploadContext;
 
     // We are setting this to 1 since we will possibly have lots
     // of data on the GPU at once for path tracing. Seem to be easily changed
