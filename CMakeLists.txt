@@ -44,7 +44,8 @@ set(INCLUDES ${INCLUDES}
         ${DEPS}/stb
         ${DEPS}/VulkanMemoryAllocator/include
         ${DEPS}/tracy/public
-        ${DEPS}/json/include)
+        ${DEPS}/json/include
+        ${DEPS}/spdlog/include)
 target_include_directories(hatgpu PRIVATE ${INCLUDES})
 
 set(ASSIMP_BUILD_GLTF_IMPORTER TRUE)
@@ -70,6 +71,9 @@ target_link_libraries(hatgpu PRIVATE VulkanMemoryAllocator)
 
 add_subdirectory(deps/tracy)
 target_link_libraries(hatgpu PUBLIC Tracy::TracyClient)
+
+add_subdirectory(deps/spdlog)
+target_link_libraries(hatgpu PRIVATE spdlog::spdlog_header_only)
 
 set(JSON_BuildTests OFF CACHE INTERNAL "")
 add_subdirectory(deps/json)

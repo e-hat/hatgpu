@@ -70,14 +70,19 @@ ForwardRenderer::ForwardRenderer(const std::string &scenePath)
 
 void ForwardRenderer::Init()
 {
+    H_LOG("Initializing forward renderer...");
     VmaAllocatorCreateInfo allocatorInfo = {};
     allocatorInfo.physicalDevice         = mPhysicalDevice;
     allocatorInfo.device                 = mDevice;
     allocatorInfo.instance               = mInstance;
 
+    H_LOG("...creating VMA allocator");
     H_CHECK(vmaCreateAllocator(&allocatorInfo, &mAllocator), "Failed to create VMA allocator");
 
-    mDeleters.emplace_back([this]() { vmaDestroyAllocator(mAllocator); });
+    mDeleters.emplace_back([this]() {
+        H_LOG("...destroying VMA allocator");
+        vmaDestroyAllocator(mAllocator);
+    });
 
     createDepthImage();
     createRenderPass();
@@ -108,6 +113,7 @@ void ForwardRenderer::OnRecreateSwapchain()
 
 void ForwardRenderer::createFramebuffers(const VkRenderPass &renderPass)
 {
+    H_LOG("...creating framebuffers");
     mSwapchainFramebuffers.resize(mSwapchainImageViews.size());
 
     for (size_t i = 0; i < mSwapchainImageViews.size(); ++i)
@@ -126,6 +132,7 @@ void ForwardRenderer::createFramebuffers(const VkRenderPass &renderPass)
 
 void ForwardRenderer::createDepthImage()
 {
+    H_LOG("...creating depth image");
     VkExtent3D depthImageExtent = {mSwapchainExtent.width, mSwapchainExtent.height, 1};
 
     VkImageCreateInfo imageInfo = init::imageInfo(
@@ -146,6 +153,7 @@ void ForwardRenderer::createDepthImage()
             "Failed to create depth image view");
 
     mDeleters.emplace_back([this]() {
+        H_LOG("...destroying depth image");
         vkDestroyImageView(mDevice, mDepthImageView, nullptr);
         vmaDestroyImage(mAllocator, mDepthImage.image, mDepthImage.allocation);
     });
@@ -153,6 +161,7 @@ void ForwardRenderer::createDepthImage()
 
 void ForwardRenderer::createDescriptors()
 {
+    H_LOG("...creating descriptors");
     std::vector<VkDescriptorPoolSize> sizes = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
                                                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 190},
                                                {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10}};
@@ -276,10 +285,12 @@ void ForwardRenderer::createDescriptors()
     vkCreateDescriptorSetLayout(mDevice, &textureLayoutInfo, nullptr, &mTextureSetLayout);
 
     mDeleters.emplace_back([this]() {
+        H_LOG("...destroying descriptor sets");
         vkDestroyDescriptorSetLayout(mDevice, mGlobalSetLayout, nullptr);
         vkDestroyDescriptorSetLayout(mDevice, mTextureSetLayout, nullptr);
         vkDestroyDescriptorPool(mDevice, mDescriptorPool, nullptr);
 
+        H_LOG("...destroying buffers");
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
             vmaDestroyBuffer(mAllocator, mFrames[i].objectBuffer.buffer,
@@ -296,6 +307,7 @@ void ForwardRenderer::createDescriptors()
 
 void ForwardRenderer::createGraphicsPipeline()
 {
+    H_LOG("...creating graphics pipeline");
     const auto vertShaderCode = readFile("../shaders/bin/shader.vert.spv");
     const auto fragShaderCode = readFile("../shaders/bin/shader.frag.spv");
 
@@ -377,8 +389,10 @@ void ForwardRenderer::createGraphicsPipeline()
                                    &mGraphicsPipelineLayout),
             "Failed to create pipeline layout object");
 
-    mDeleters.emplace_back(
-        [this]() { vkDestroyPipelineLayout(mDevice, mGraphicsPipelineLayout, nullptr); });
+    mDeleters.emplace_back([this]() {
+        H_LOG("...destroying graphics pipeline layout");
+        vkDestroyPipelineLayout(mDevice, mGraphicsPipelineLayout, nullptr);
+    });
 
     std::array<VkDynamicState, 2> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
                                                    VK_DYNAMIC_STATE_SCISSOR};
@@ -409,7 +423,10 @@ void ForwardRenderer::createGraphicsPipeline()
                                       &mGraphicsPipeline),
             "Failed to create graphics pipeline");
 
-    mDeleters.emplace_back([this]() { vkDestroyPipeline(mDevice, mGraphicsPipeline, nullptr); });
+    mDeleters.emplace_back([this]() {
+        H_LOG("...destroying graphics pipeline");
+        vkDestroyPipeline(mDevice, mGraphicsPipeline, nullptr);
+    });
 
     vkDestroyShaderModule(mDevice, vertShaderModule, nullptr);
     vkDestroyShaderModule(mDevice, fragShaderModule, nullptr);
@@ -417,6 +434,7 @@ void ForwardRenderer::createGraphicsPipeline()
 
 void ForwardRenderer::createRenderPass()
 {
+    H_LOG("...creating render pass");
     // Initialize color attachment
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format         = mSwapchainImageFormat;
@@ -487,7 +505,10 @@ void ForwardRenderer::createRenderPass()
     H_CHECK(vkCreateRenderPass(mDevice, &renderPassInfo, nullptr, &mRenderPass),
             "Failed to create render pass");
 
-    mDeleters.emplace_back([this]() { vkDestroyRenderPass(mDevice, mRenderPass, nullptr); });
+    mDeleters.emplace_back([this]() {
+        H_LOG("...destroying render pass");
+        vkDestroyRenderPass(mDevice, mRenderPass, nullptr);
+    });
 }
 
 AllocatedBuffer ForwardRenderer::createBuffer(size_t allocSize,
@@ -823,11 +844,13 @@ void ForwardRenderer::uploadTextures(Mesh &mesh)
 
 void ForwardRenderer::loadSceneFromDisk()
 {
+    H_LOG("...loading scene from disk");
     mScene.loadFromJson(mScenePath, mTextureManager);
 }
 
 void ForwardRenderer::uploadSceneToGpu()
 {
+    H_LOG("...uploading scene to GPU");
     for (auto &renderable : mScene.renderables)
     {
         for (auto &mesh : renderable.model->meshes)
@@ -838,6 +861,7 @@ void ForwardRenderer::uploadSceneToGpu()
     }
 
     mDeleters.emplace_back([this]() {
+        H_LOG("...destroying texture image views");
         for (const auto &[_, texture] : mGpuTextures)
         {
             vkDestroyImageView(mDevice, texture.imageView, nullptr);
@@ -971,6 +995,8 @@ void ForwardRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer,
 
 ForwardRenderer::~ForwardRenderer()
 {
+    H_LOG("Destroying Forward Renderer...");
+    H_LOG("...waiting for device to be idle");
     vkDeviceWaitIdle(mDevice);
 
     while (!mDeleters.empty())

@@ -279,6 +279,7 @@ Application::Application(const std::string &windowName)
 
 void Application::initWindow()
 {
+    H_LOG("Initializing GLFW window...");
     glfwInit();
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -290,6 +291,7 @@ void Application::initWindow()
     mInputManager.SetGLFWCallbacks(mWindow, &mCamera);
 
     mDeleters.emplace_back([this]() {
+        H_LOG("...destroying GLFW window");
         glfwDestroyWindow(mWindow);
         glfwTerminate();
     });
@@ -297,6 +299,7 @@ void Application::initWindow()
 
 void Application::initVulkan()
 {
+    H_LOG("Initializing vulkan...");
     createInstance();
     setupDebugMessenger();
     createSurface();
@@ -314,6 +317,7 @@ void Application::initVulkan()
 
 void Application::initImGui()
 {
+    H_LOG("Initializing Dear ImGui");
     IMGUI_CHECKVERSION();
 
     createUiPass();
@@ -372,6 +376,7 @@ void Application::initImGui()
 
     // add the destroy the imgui created structures
     mDeleters.emplace_back([imguiPool, this] {
+        H_LOG("...destroying Dear ImGui descriptor pool");
         vkDestroyDescriptorPool(mDevice, imguiPool, nullptr);
         ImGui_ImplVulkan_Shutdown();
     });
@@ -401,20 +406,25 @@ void Application::immediateSubmit(std::function<void(VkCommandBuffer)> &&functio
 
 void Application::createUploadContext()
 {
+    H_LOG("...creating upload context");
     VkFenceCreateInfo uploadFenceCreateInfo = init::fenceInfo();
     H_CHECK(vkCreateFence(mDevice, &uploadFenceCreateInfo, nullptr, &mUploadContext.uploadFence),
             "Failed to create upload context fence");
 
-    mDeleters.emplace_back(
-        [this]() { vkDestroyFence(mDevice, mUploadContext.uploadFence, nullptr); });
+    mDeleters.emplace_back([this]() {
+        H_LOG("...destroying upload context fence");
+        vkDestroyFence(mDevice, mUploadContext.uploadFence, nullptr);
+    });
 
     VkCommandPoolCreateInfo commandPoolCreateInfo = init::commandPoolInfo(mGraphicsQueueIndex);
     H_CHECK(
         vkCreateCommandPool(mDevice, &commandPoolCreateInfo, nullptr, &mUploadContext.commandPool),
         "Failed to create upload context command pool");
 
-    mDeleters.emplace_back(
-        [this]() { vkDestroyCommandPool(mDevice, mUploadContext.commandPool, nullptr); });
+    mDeleters.emplace_back([this]() {
+        H_LOG("...destroying upload context command pool");
+        vkDestroyCommandPool(mDevice, mUploadContext.commandPool, nullptr);
+    });
 
     VkCommandBufferAllocateInfo commandBufferAllocInfo =
         init::commandBufferAllocInfo(mUploadContext.commandPool);
@@ -425,6 +435,7 @@ void Application::createUploadContext()
 
 void Application::createUiPass()
 {
+    H_LOG("...creating UI render pass");
     // Initialize color attachment
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format         = mSwapchainImageFormat;
@@ -495,11 +506,15 @@ void Application::createUiPass()
     H_CHECK(vkCreateRenderPass(mDevice, &renderPassInfo, nullptr, &mUiPass),
             "Failed to create render pass");
 
-    mDeleters.emplace_back([this]() { vkDestroyRenderPass(mDevice, mUiPass, nullptr); });
+    mDeleters.emplace_back([this]() {
+        H_LOG("...deleting UI render pass");
+        vkDestroyRenderPass(mDevice, mUiPass, nullptr);
+    });
 }
 
 void Application::Run()
 {
+    H_LOG("Running application...");
     Init();
 
     while (!glfwWindowShouldClose(mWindow))
@@ -625,6 +640,7 @@ void Application::Run()
 
 void Application::createInstance()
 {
+    H_LOG("...creating vulkan instance");
     H_ASSERT(!kEnableValidationLayers || checkValidationLayerSupport(),
              "Validation layers were requested, but not available for use");
 
@@ -661,7 +677,10 @@ void Application::createInstance()
 
     H_CHECK(vkCreateInstance(&createInfo, nullptr, &mInstance), "Failed to create VkInstance");
 
-    mDeleters.emplace_back([this] { vkDestroyInstance(mInstance, nullptr); });
+    mDeleters.emplace_back([this] {
+        H_LOG("...destroying instance");
+        vkDestroyInstance(mInstance, nullptr);
+    });
 
     uint32_t availableExtensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &availableExtensionCount, nullptr);
@@ -672,6 +691,7 @@ void Application::createInstance()
 
 void Application::setupDebugMessenger()
 {
+    H_LOG("...setting up debug messenger");
     if constexpr (!kEnableValidationLayers)
         return;
 
@@ -681,16 +701,22 @@ void Application::setupDebugMessenger()
     H_CHECK(CreateDebugUtilsMessengerEXT(mInstance, &createInfo, nullptr, &mDebugMessenger),
             "Failed to setup debug messenger");
 
-    mDeleters.emplace_back(
-        [this]() { DestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr); });
+    mDeleters.emplace_back([this]() {
+        H_LOG("...destroying debug messenger");
+        DestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr);
+    });
 }
 
 void Application::createSurface()
 {
+    H_LOG("...creating window surface");
     H_CHECK(glfwCreateWindowSurface(mInstance, mWindow, nullptr, &mSurface),
             "Failed to create window surface");
 
-    mDeleters.emplace_back([this]() { vkDestroySurfaceKHR(mInstance, mSurface, nullptr); });
+    mDeleters.emplace_back([this]() {
+        H_LOG("...destroying window surface");
+        vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
+    });
 }
 
 Application::QueueFamilyIndices Application::findQueueFamilies(const VkPhysicalDevice &device,
@@ -757,6 +783,7 @@ bool Application::isDeviceSuitable(const VkPhysicalDevice &device, const VkSurfa
 
 void Application::pickPhysicalDevice()
 {
+    H_LOG("...picking physical device");
     uint32_t candidateDeviceCount = 0;
     vkEnumeratePhysicalDevices(mInstance, &candidateDeviceCount, nullptr);
     H_ASSERT(candidateDeviceCount > 0, "Failed to find GPUs with Vulkan support");
@@ -775,10 +802,13 @@ void Application::pickPhysicalDevice()
     H_ASSERT(mPhysicalDevice != VK_NULL_HANDLE, "Failed to find a suitable GPU");
 
     vkGetPhysicalDeviceProperties(mPhysicalDevice, &mGpuProperties);
+
+    H_LOG(std::string("...selected physical device ") + mGpuProperties.deviceName);
 }
 
 void Application::createLogicalDevice()
 {
+    H_LOG("...creating logical device");
     QueueFamilyIndices indices = findQueueFamilies(mPhysicalDevice, mSurface);
 
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos{};
@@ -822,7 +852,10 @@ void Application::createLogicalDevice()
     H_CHECK(vkCreateDevice(mPhysicalDevice, &createInfo, nullptr, &mDevice),
             "Unable to create logical device");
 
-    mDeleters.emplace_back([this]() { vkDestroyDevice(mDevice, nullptr); });
+    mDeleters.emplace_back([this]() {
+        H_LOG("...destroying logical device");
+        vkDestroyDevice(mDevice, nullptr);
+    });
 
     vkGetDeviceQueue(mDevice, *indices.graphicsFamily, 0, &mGraphicsQueue);
     mGraphicsQueueIndex = *indices.graphicsFamily;
@@ -831,6 +864,7 @@ void Application::createLogicalDevice()
 
 void Application::createSwapchain()
 {
+    H_LOG("...creating swapchain");
     SwapchainSupportDetails swapchainSupport = querySwapchainSupport(mPhysicalDevice, mSurface);
 
     const VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapchainSupport.formats);
@@ -887,6 +921,7 @@ void Application::createSwapchain()
 
 void Application::createSwapchainImageViews()
 {
+    H_LOG("...creating swapchain image views");
     mSwapchainImageViews.resize(mSwapchainImages.size());
 
     for (size_t i = 0; i < mSwapchainImages.size(); ++i)
@@ -918,6 +953,7 @@ VkShaderModule Application::createShaderModule(const std::vector<char> &code)
 
 void Application::createCommandPool()
 {
+    H_LOG("...creating command pool");
     QueueFamilyIndices queueFamilyIndices = findQueueFamilies(mPhysicalDevice, mSurface);
 
     VkCommandPoolCreateInfo poolInfo = init::commandPoolInfo(
@@ -925,11 +961,15 @@ void Application::createCommandPool()
     H_CHECK(vkCreateCommandPool(mDevice, &poolInfo, nullptr, &mCommandPool),
             "Failed to create command pool");
 
-    mDeleters.emplace_back([this]() { vkDestroyCommandPool(mDevice, mCommandPool, nullptr); });
+    mDeleters.emplace_back([this]() {
+        H_LOG("...destroying command pool");
+        vkDestroyCommandPool(mDevice, mCommandPool, nullptr);
+    });
 }
 
 void Application::createCommandBuffers()
 {
+    H_LOG("...creating command buffers");
     std::array<VkCommandBuffer, kMaxFramesInFlight> commandBuffers{};
 
     VkCommandBufferAllocateInfo allocInfo =
@@ -945,6 +985,7 @@ void Application::createCommandBuffers()
 
 void Application::createTracyContexts()
 {
+    H_LOG("...creating Tracy contexts");
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
         mFrames[i].tracyContext =
@@ -952,6 +993,7 @@ void Application::createTracyContexts()
     }
 
     mDeleters.emplace_back([this]() {
+        H_LOG("...destroying Tracy contexts");
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
             TracyVkDestroy(mFrames[i].tracyContext);
@@ -961,6 +1003,7 @@ void Application::createTracyContexts()
 
 void Application::createSyncObjects()
 {
+    H_LOG("...creating sync objects");
     VkSemaphoreCreateInfo semaphoreCreateInfo = init::semaphoreInfo();
     VkFenceCreateInfo fenceCreateInfo         = init::fenceInfo(VK_FENCE_CREATE_SIGNALED_BIT);
 
@@ -977,6 +1020,7 @@ void Application::createSyncObjects()
     }
 
     mDeleters.emplace_back([this]() {
+        H_LOG("...destroying frame sync objects");
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
             vkDestroySemaphore(mDevice, mFrames[i].imageAvailableSemaphore, nullptr);
@@ -988,14 +1032,15 @@ void Application::createSyncObjects()
 
 void Application::cleanupSwapchain()
 {
-    for (size_t i = 0; i < mSwapchainFramebuffers.size(); ++i)
+    H_LOG("...destroying swapchain");
+    for (const auto framebuffer : mSwapchainFramebuffers)
     {
-        vkDestroyFramebuffer(mDevice, mSwapchainFramebuffers[i], nullptr);
+        vkDestroyFramebuffer(mDevice, framebuffer, nullptr);
     }
 
-    for (size_t i = 0; i < mSwapchainImageViews.size(); ++i)
+    for (const auto imageView : mSwapchainImageViews)
     {
-        vkDestroyImageView(mDevice, mSwapchainImageViews[i], nullptr);
+        vkDestroyImageView(mDevice, imageView, nullptr);
     }
 
     vkDestroySwapchainKHR(mDevice, mSwapchain, nullptr);
@@ -1021,6 +1066,8 @@ void Application::recreateSwapchain()
 
 Application::~Application()
 {
+    H_LOG("Destroying Application...");
+    H_LOG("...waiting for device to be idle");
     vkDeviceWaitIdle(mDevice);
 
     while (!mDeleters.empty())
