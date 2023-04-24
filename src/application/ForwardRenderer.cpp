@@ -103,7 +103,9 @@ void ForwardRenderer::OnRender()
 }
 void ForwardRenderer::OnImGuiRender()
 {
-    ImGui::ShowDemoWindow();
+    ImGui::Text("You are viewing the forward renderer.");
+    ImGui::Text("Move around with WASD, LSHIFT and LCTRL");
+    ImGui::Text("Look around with arrow keys. Zoom in/out with mouse wheel");
 }
 
 void ForwardRenderer::OnRecreateSwapchain()
