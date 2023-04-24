@@ -3,8 +3,8 @@ cmake_minimum_required(VERSION 3.2)
 project(hatgpu VERSION 0.0.1 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_EXPORT_COMPILE_COMMANDS True)
+set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
+set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
 set(DEPS ${PROJECT_SOURCE_DIR}/deps)
 
@@ -28,7 +28,11 @@ set(SOURCES ${SOURCES} ${SOURCE_DIR}/main.cpp
         ${SOURCE_DIR}/geometry/Model.cpp
         ${SOURCE_DIR}/geometry/Model.h
         ${SOURCE_DIR}/initializers.h
-        ${SOURCE_DIR}/initializers.cpp src/util/Random.h src/scene/Scene.h src/scene/Scene.cpp)
+        ${SOURCE_DIR}/initializers.cpp 
+        ${SOURCE_DIR}/util/Random.h 
+        ${SOURCE_DIR}/scene/Scene.h 
+        ${SOURCE_DIR}/scene/Scene.cpp
+        ${SOURCE_DIR}/hatpch.cpp)
 add_executable(hatgpu ${SOURCES})
 
 set(INCLUDES ${SOURCE_DIR})
@@ -43,7 +47,13 @@ set(INCLUDES ${INCLUDES}
         ${DEPS}/json/include)
 target_include_directories(hatgpu PRIVATE ${INCLUDES})
 
+set(ASSIMP_BUILD_GLTF_IMPORTER TRUE)
+set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT CACHE INTERNAL FALSE)
+option(ASSIMP_WARNINGS_AS_ERRORS "" OFF)
+option(ASSIMP_NO_EXPORT "" ON)
+option(ASSIMP_BUILD_TESTS "" OFF)
 add_subdirectory(deps/assimp)
+set_target_properties(assimp PROPERTIES BUILD_SHARED_LIBS TRUE)
 target_link_libraries(hatgpu PRIVATE assimp)
 
 add_subdirectory(deps/glfw)
