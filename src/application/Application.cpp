@@ -507,7 +507,7 @@ void Application::createUiPass()
             "Failed to create render pass");
 
     mDeleters.emplace_back([this]() {
-        H_LOG("...deleting UI render pass");
+        H_LOG("...destroying UI render pass");
         vkDestroyRenderPass(mDevice, mUiPass, nullptr);
     });
 }
