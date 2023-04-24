@@ -1,5 +1,5 @@
-#ifndef _INCLUDE_FORWARDRENDERER_H
-#define _INCLUDE_FORWARDRENDERER_H
+#ifndef _INCLUDE_BDPTRENDERER_H
+#define _INCLUDE_BDPTRENDERER_H
 #include "hatpch.h"
 
 #include "application/Application.h"
@@ -22,11 +22,11 @@
 namespace hatgpu
 {
 
-class ForwardRenderer : public Application
+class BdptRenderer : public Application
 {
   public:
-    ForwardRenderer(const std::string &scenePath);
-    ~ForwardRenderer() override;
+    BdptRenderer(const std::string &scenePath);
+    ~BdptRenderer() override;
 
     void Init() override;
     void Exit() override;

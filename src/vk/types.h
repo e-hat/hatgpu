@@ -6,6 +6,8 @@
 
 namespace hatgpu
 {
+namespace vk
+{
 struct AllocatedBuffer
 {
     VkBuffer buffer;
@@ -17,6 +19,8 @@ struct AllocatedImage
     VkImage image;
     VmaAllocation allocation;
 };
+
+}  // namespace vk
 }  // namespace hatgpu
 
 #endif  //_INCLUDE_TYPES_H

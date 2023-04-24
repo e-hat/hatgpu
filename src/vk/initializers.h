@@ -4,7 +4,7 @@
 
 namespace hatgpu
 {
-namespace init
+namespace vk
 {
 VkCommandPoolCreateInfo commandPoolInfo(uint32_t queueFamilyIndex, VkCommandPoolCreateFlags = 0);
 
@@ -75,7 +75,7 @@ VkWriteDescriptorSet writeDescriptorImage(VkDescriptorType type,
 VkSamplerCreateInfo samplerInfo(
     VkFilter filters,
     VkSamplerAddressMode samplerAdressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
-}  // namespace init
+}  // namespace vk
 }  // namespace hatgpu
 
 #endif  //_INCLUDE_INITIALIZERS_H

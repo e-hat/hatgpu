@@ -11,28 +11,33 @@ set(DEPS ${PROJECT_SOURCE_DIR}/deps)
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR}/src)
 file(GLOB_RECURSE SOURCES ${SOURCE_DIR}/**/*.cpp)
 file(GLOB TOPLEVEL_SOURCES ${SOURCE_DIR}/*.cpp)
-set(SOURCES ${SOURCES} ${SOURCE_DIR}/main.cpp
+set(SOURCES ${SOURCES} 
+        ${SOURCE_DIR}/main.cpp
+        ${SOURCE_DIR}/hatpch.cpp
         ${SOURCE_DIR}/application/Application.h
         ${SOURCE_DIR}/application/Application.cpp
         ${SOURCE_DIR}/application/ForwardRenderer.h
         ${SOURCE_DIR}/application/ForwardRenderer.cpp
         ${SOURCE_DIR}/application/InputManager.h
         ${SOURCE_DIR}/application/InputManager.cpp
+        ${SOURCE_DIR}/application/BdptRenderer.h
+        ${SOURCE_DIR}/application/BdptRenderer.cpp
         ${SOURCE_DIR}/util/Time.h
         ${SOURCE_DIR}/util/Time.cpp
-        ${SOURCE_DIR}/scene/Camera.h
-        ${SOURCE_DIR}/geometry/Mesh.cpp
-        ${SOURCE_DIR}/geometry/Mesh.h
-        ${SOURCE_DIR}/types.h
-        ${SOURCE_DIR}/initialize_vma.cpp
-        ${SOURCE_DIR}/geometry/Model.cpp
-        ${SOURCE_DIR}/geometry/Model.h
-        ${SOURCE_DIR}/initializers.h
-        ${SOURCE_DIR}/initializers.cpp 
         ${SOURCE_DIR}/util/Random.h 
+        ${SOURCE_DIR}/scene/Camera.h
         ${SOURCE_DIR}/scene/Scene.h 
         ${SOURCE_DIR}/scene/Scene.cpp
-        ${SOURCE_DIR}/hatpch.cpp)
+        ${SOURCE_DIR}/geometry/Mesh.cpp
+        ${SOURCE_DIR}/geometry/Mesh.h
+        ${SOURCE_DIR}/geometry/Model.cpp
+        ${SOURCE_DIR}/geometry/Model.h
+        ${SOURCE_DIR}/vk/types.h
+        ${SOURCE_DIR}/vk/initialize_vma.cpp
+        ${SOURCE_DIR}/vk/initializers.h
+        ${SOURCE_DIR}/vk/initializers.cpp
+        ${SOURCE_DIR}/vk/allocator.h
+        ${SOURCE_DIR}/vk/allocator.cpp)
 add_executable(hatgpu ${SOURCES})
 
 set(INCLUDES ${SOURCE_DIR})
@@ -48,6 +53,8 @@ set(INCLUDES ${INCLUDES}
         ${DEPS}/spdlog/include)
 target_include_directories(hatgpu PRIVATE ${INCLUDES})
 
+# We need to configure these options, else Assimp with build 
+# every single importer and exporter. We only need GLTF B)
 set(ASSIMP_BUILD_GLTF_IMPORTER TRUE)
 set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT CACHE INTERNAL FALSE)
 option(ASSIMP_WARNINGS_AS_ERRORS "" OFF)

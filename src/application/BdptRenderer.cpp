@@ -1,6 +1,6 @@
 #include "hatpch.h"
 
-#include "ForwardRenderer.h"
+#include "BdptRenderer.h"
 #include "imgui.h"
 #include "util/Random.h"
 #include "vk/initializers.h"
@@ -50,11 +50,11 @@ struct GpuDirLight
 };
 }  // namespace
 
-ForwardRenderer::ForwardRenderer(const std::string &scenePath)
+BdptRenderer::BdptRenderer(const std::string &scenePath)
     : Application("HatGPU"), mScenePath(scenePath)
 {}
 
-void ForwardRenderer::Init()
+void BdptRenderer::Init()
 {
     H_LOG("Initializing forward renderer...");
     VmaAllocatorCreateInfo allocatorInfo = {};
@@ -80,24 +80,24 @@ void ForwardRenderer::Init()
     uploadSceneToGpu();
 }
 
-void ForwardRenderer::Exit() {}
+void BdptRenderer::Exit() {}
 
-void ForwardRenderer::OnRender()
+void BdptRenderer::OnRender()
 {
     recordCommandBuffer(mCurrentApplicationFrame->commandBuffer, mCurrentFrameIndex);
     ++mFrameCount;
 }
-void ForwardRenderer::OnImGuiRender()
+void BdptRenderer::OnImGuiRender()
 {
     ImGui::ShowDemoWindow();
 }
 
-void ForwardRenderer::OnRecreateSwapchain()
+void BdptRenderer::OnRecreateSwapchain()
 {
     createFramebuffers(mRenderPass);
 }
 
-void ForwardRenderer::createFramebuffers(const VkRenderPass &renderPass)
+void BdptRenderer::createFramebuffers(const VkRenderPass &renderPass)
 {
     H_LOG("...creating framebuffers");
     mSwapchainFramebuffers.resize(mSwapchainImageViews.size());
@@ -115,7 +115,7 @@ void ForwardRenderer::createFramebuffers(const VkRenderPass &renderPass)
     }
 }
 
-void ForwardRenderer::createDepthImage()
+void BdptRenderer::createDepthImage()
 {
     H_LOG("...creating depth image");
     VkExtent3D depthImageExtent = {mSwapchainExtent.width, mSwapchainExtent.height, 1};
@@ -144,7 +144,7 @@ void ForwardRenderer::createDepthImage()
     });
 }
 
-void ForwardRenderer::createDescriptors()
+void BdptRenderer::createDescriptors()
 {
     H_LOG("...creating descriptors");
     std::vector<VkDescriptorPoolSize> sizes = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
@@ -287,7 +287,7 @@ void ForwardRenderer::createDescriptors()
     });
 }
 
-void ForwardRenderer::createGraphicsPipeline()
+void BdptRenderer::createGraphicsPipeline()
 {
     H_LOG("...creating graphics pipeline");
 
@@ -410,7 +410,7 @@ void ForwardRenderer::createGraphicsPipeline()
     }
 }
 
-void ForwardRenderer::createRenderPass()
+void BdptRenderer::createRenderPass()
 {
     H_LOG("...creating render pass");
     // Initialize color attachment
@@ -489,7 +489,7 @@ void ForwardRenderer::createRenderPass()
     });
 }
 
-void ForwardRenderer::uploadMesh(Mesh &mesh)
+void BdptRenderer::uploadMesh(Mesh &mesh)
 {
     // Uploading the vertex data followed by the index data in contiguous memory
     const size_t verticesSize = mesh.vertices.size() * sizeof(Vertex);
@@ -533,7 +533,7 @@ void ForwardRenderer::uploadMesh(Mesh &mesh)
     mAllocator.destroyBuffer(stagingBuffer);
 }
 
-void ForwardRenderer::uploadTextures(Mesh &mesh)
+void BdptRenderer::uploadTextures(Mesh &mesh)
 {
     // Check whether linear GPU blitting (required by mipmaps) is even supported by this hardware
     // before we do all sorts of work
@@ -766,13 +766,13 @@ void ForwardRenderer::uploadTextures(Mesh &mesh)
     }
 }
 
-void ForwardRenderer::loadSceneFromDisk()
+void BdptRenderer::loadSceneFromDisk()
 {
     H_LOG("...loading scene from disk");
     mScene.loadFromJson(mScenePath, mTextureManager);
 }
 
-void ForwardRenderer::uploadSceneToGpu()
+void BdptRenderer::uploadSceneToGpu()
 {
     H_LOG("...uploading scene to GPU");
     for (auto &renderable : mScene.renderables)
@@ -793,7 +793,7 @@ void ForwardRenderer::uploadSceneToGpu()
     });
 }
 
-void ForwardRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
+void BdptRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 {
     TracyVkZoneC(mCurrentApplicationFrame->tracyContext, commandBuffer, "drawObjects",
                  tracy::Color::Blue);
@@ -908,15 +908,15 @@ void ForwardRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
     vkCmdEndRenderPass(commandBuffer);
 }
 
-void ForwardRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer,
-                                          [[maybe_unused]] uint32_t imageIndex)
+void BdptRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer,
+                                       [[maybe_unused]] uint32_t imageIndex)
 {
     ZoneScopedC(tracy::Color::PeachPuff);
 
     drawObjects(commandBuffer);
 }
 
-ForwardRenderer::~ForwardRenderer()
+BdptRenderer::~BdptRenderer()
 {
     H_LOG("Destroying Forward Renderer...");
     H_LOG("...waiting for device to be idle");

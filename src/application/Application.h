@@ -4,6 +4,7 @@
 
 #include "application/InputManager.h"
 #include "util/Time.h"
+#include "vk/deleter.h"
 
 #include <tracy/TracyVulkan.hpp>
 
@@ -48,7 +49,10 @@ class Application
     };
     UploadContext mUploadContext;
 
-    static constexpr int kMaxFramesInFlight = 2;
+    // We are setting this to 1 since we will possibly have lots
+    // of data on the GPU at once for path tracing. Seem to be easily changed
+    // either way -- the path tracer will be implemented agnostic of this.
+    static constexpr int kMaxFramesInFlight = 1;
 
     GLFWwindow *mWindow;
     std::string mWindowName;
@@ -134,7 +138,8 @@ class Application
     void createTracyContexts();
     void createUploadContext();
     void createUiPass();
-    std::deque<Deleter> mDeleters;
+
+    vk::DeletionQueue mDeleter;
 };
 }  // namespace hatgpu
 #endif

@@ -2,7 +2,7 @@
 #define _INCLUDE_MESH_H
 #include "hatpch.h"
 
-#include "types.h"
+#include "vk/types.h"
 
 #include <array>
 #include <memory>
@@ -98,8 +98,8 @@ struct Mesh
     std::unordered_map<TextureType, std::string> textures;
     VkDescriptorSet descriptor;
 
-    AllocatedBuffer vertexBuffer;
-    AllocatedBuffer indexBuffer;
+    vk::AllocatedBuffer vertexBuffer;
+    vk::AllocatedBuffer indexBuffer;
 
     bool loadFromObj(const std::string &filename);
 };

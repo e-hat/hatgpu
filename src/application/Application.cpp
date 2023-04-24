@@ -1,7 +1,7 @@
 #include "hatpch.h"
 
 #include "application/Application.h"
-#include "initializers.h"
+#include "vk/initializers.h"
 
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_vulkan.h>
@@ -290,7 +290,7 @@ void Application::initWindow()
 
     mInputManager.SetGLFWCallbacks(mWindow, &mCamera);
 
-    mDeleters.emplace_back([this]() {
+    mDeleter.enqueue([this]() {
         H_LOG("...destroying GLFW window");
         glfwDestroyWindow(mWindow);
         glfwTerminate();
@@ -307,7 +307,7 @@ void Application::initVulkan()
     createLogicalDevice();
     createSwapchain();
     createSwapchainImageViews();
-    mDeleters.emplace_back([this]() { cleanupSwapchain(); });
+    mDeleter.enqueue([this]() { cleanupSwapchain(); });
     createSyncObjects();
     createCommandPool();
     createCommandBuffers();
@@ -375,7 +375,7 @@ void Application::initImGui()
     ImGui_ImplVulkan_DestroyFontUploadObjects();
 
     // add the destroy the imgui created structures
-    mDeleters.emplace_back([imguiPool, this] {
+    mDeleter.enqueue([imguiPool, this] {
         H_LOG("...destroying Dear ImGui descriptor pool");
         vkDestroyDescriptorPool(mDevice, imguiPool, nullptr);
         ImGui_ImplVulkan_Shutdown();
@@ -386,14 +386,14 @@ void Application::immediateSubmit(std::function<void(VkCommandBuffer)> &&functio
 {
     VkCommandBuffer cmd = mUploadContext.commandBuffer;
     VkCommandBufferBeginInfo cmdBeginInfo =
-        init::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+        vk::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
     H_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo), "Failed to begin command buffer");
 
     function(cmd);
 
     H_CHECK(vkEndCommandBuffer(cmd), "Failed to end command buffer");
 
-    VkSubmitInfo submitInfo = init::submitInfo(&cmd);
+    VkSubmitInfo submitInfo = vk::submitInfo(&cmd);
     H_CHECK(vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mUploadContext.uploadFence),
             "Failed to submit to queue");
 
@@ -407,27 +407,27 @@ void Application::immediateSubmit(std::function<void(VkCommandBuffer)> &&functio
 void Application::createUploadContext()
 {
     H_LOG("...creating upload context");
-    VkFenceCreateInfo uploadFenceCreateInfo = init::fenceInfo();
+    VkFenceCreateInfo uploadFenceCreateInfo = vk::fenceInfo();
     H_CHECK(vkCreateFence(mDevice, &uploadFenceCreateInfo, nullptr, &mUploadContext.uploadFence),
             "Failed to create upload context fence");
 
-    mDeleters.emplace_back([this]() {
+    mDeleter.enqueue([this]() {
         H_LOG("...destroying upload context fence");
         vkDestroyFence(mDevice, mUploadContext.uploadFence, nullptr);
     });
 
-    VkCommandPoolCreateInfo commandPoolCreateInfo = init::commandPoolInfo(mGraphicsQueueIndex);
+    VkCommandPoolCreateInfo commandPoolCreateInfo = vk::commandPoolInfo(mGraphicsQueueIndex);
     H_CHECK(
         vkCreateCommandPool(mDevice, &commandPoolCreateInfo, nullptr, &mUploadContext.commandPool),
         "Failed to create upload context command pool");
 
-    mDeleters.emplace_back([this]() {
+    mDeleter.enqueue([this]() {
         H_LOG("...destroying upload context command pool");
         vkDestroyCommandPool(mDevice, mUploadContext.commandPool, nullptr);
     });
 
     VkCommandBufferAllocateInfo commandBufferAllocInfo =
-        init::commandBufferAllocInfo(mUploadContext.commandPool);
+        vk::commandBufferAllocInfo(mUploadContext.commandPool);
     H_CHECK(
         vkAllocateCommandBuffers(mDevice, &commandBufferAllocInfo, &mUploadContext.commandBuffer),
         "Failed to allocate upload context command buffer");
@@ -506,7 +506,7 @@ void Application::createUiPass()
     H_CHECK(vkCreateRenderPass(mDevice, &renderPassInfo, nullptr, &mUiPass),
             "Failed to create render pass");
 
-    mDeleters.emplace_back([this]() {
+    mDeleter.enqueue([this]() {
         H_LOG("...destroying UI render pass");
         vkDestroyRenderPass(mDevice, mUiPass, nullptr);
     });
@@ -543,7 +543,7 @@ void Application::Run()
         vkResetFences(mDevice, 1, &mCurrentApplicationFrame->inFlightFence);
         vkResetCommandBuffer(mCurrentApplicationFrame->commandBuffer, 0);
 
-        VkCommandBufferBeginInfo beginInfo = init::commandBufferBeginInfo();
+        VkCommandBufferBeginInfo beginInfo = vk::commandBufferBeginInfo();
         H_CHECK(vkBeginCommandBuffer(mCurrentApplicationFrame->commandBuffer, &beginInfo),
                 "Failed to begin recording command buffer");
 
@@ -569,7 +569,7 @@ void Application::Run()
             OnRender();
         }
 
-        VkRenderPassBeginInfo uiPassBegin = init::renderPassBeginInfo(
+        VkRenderPassBeginInfo uiPassBegin = vk::renderPassBeginInfo(
             mUiPass, mSwapchainExtent, mSwapchainFramebuffers[mCurrentImageIndex]);
         uiPassBegin.clearValueCount = 0;
         uiPassBegin.pClearValues    = VK_NULL_HANDLE;
@@ -592,7 +592,7 @@ void Application::Run()
         H_CHECK(vkEndCommandBuffer(mCurrentApplicationFrame->commandBuffer),
                 "Failed to end recording of command buffer");
 
-        VkSubmitInfo submitInfo = init::submitInfo(&mCurrentApplicationFrame->commandBuffer);
+        VkSubmitInfo submitInfo = vk::submitInfo(&mCurrentApplicationFrame->commandBuffer);
         std::array<VkSemaphore, 1> waitSemaphores = {
             mCurrentApplicationFrame->imageAvailableSemaphore};
         std::array<VkPipelineStageFlags, 1> waitStages = {
@@ -609,7 +609,7 @@ void Application::Run()
             vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mCurrentApplicationFrame->inFlightFence),
             "Failed to submit draw command buffer");
 
-        VkPresentInfoKHR presentInfo             = init::presentInfo();
+        VkPresentInfoKHR presentInfo             = vk::presentInfo();
         presentInfo.waitSemaphoreCount           = 1;
         presentInfo.pWaitSemaphores              = signalSemaphores.data();
         std::array<VkSwapchainKHR, 1> swapchains = {mSwapchain};
@@ -677,7 +677,7 @@ void Application::createInstance()
 
     H_CHECK(vkCreateInstance(&createInfo, nullptr, &mInstance), "Failed to create VkInstance");
 
-    mDeleters.emplace_back([this] {
+    mDeleter.enqueue([this] {
         H_LOG("...destroying instance");
         vkDestroyInstance(mInstance, nullptr);
     });
@@ -701,7 +701,7 @@ void Application::setupDebugMessenger()
     H_CHECK(CreateDebugUtilsMessengerEXT(mInstance, &createInfo, nullptr, &mDebugMessenger),
             "Failed to setup debug messenger");
 
-    mDeleters.emplace_back([this]() {
+    mDeleter.enqueue([this]() {
         H_LOG("...destroying debug messenger");
         DestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr);
     });
@@ -713,7 +713,7 @@ void Application::createSurface()
     H_CHECK(glfwCreateWindowSurface(mInstance, mWindow, nullptr, &mSurface),
             "Failed to create window surface");
 
-    mDeleters.emplace_back([this]() {
+    mDeleter.enqueue([this]() {
         H_LOG("...destroying window surface");
         vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
     });
@@ -852,7 +852,7 @@ void Application::createLogicalDevice()
     H_CHECK(vkCreateDevice(mPhysicalDevice, &createInfo, nullptr, &mDevice),
             "Unable to create logical device");
 
-    mDeleters.emplace_back([this]() {
+    mDeleter.enqueue([this]() {
         H_LOG("...destroying logical device");
         vkDestroyDevice(mDevice, nullptr);
     });
@@ -926,7 +926,7 @@ void Application::createSwapchainImageViews()
 
     for (size_t i = 0; i < mSwapchainImages.size(); ++i)
     {
-        VkImageViewCreateInfo createInfo = init::imageViewInfo(
+        VkImageViewCreateInfo createInfo = vk::imageViewInfo(
             mSwapchainImageFormat, mSwapchainImages[i], VK_IMAGE_ASPECT_COLOR_BIT);
         createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -937,31 +937,17 @@ void Application::createSwapchainImageViews()
     }
 }
 
-VkShaderModule Application::createShaderModule(const std::vector<char> &code)
-{
-    VkShaderModuleCreateInfo createInfo{};
-    createInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    createInfo.codeSize = code.size();
-    createInfo.pCode    = reinterpret_cast<const uint32_t *>(code.data());
-
-    VkShaderModule shaderModule;
-    H_CHECK(vkCreateShaderModule(mDevice, &createInfo, nullptr, &shaderModule),
-            "Failed to create shader module");
-
-    return shaderModule;
-}
-
 void Application::createCommandPool()
 {
     H_LOG("...creating command pool");
     QueueFamilyIndices queueFamilyIndices = findQueueFamilies(mPhysicalDevice, mSurface);
 
-    VkCommandPoolCreateInfo poolInfo = init::commandPoolInfo(
+    VkCommandPoolCreateInfo poolInfo = vk::commandPoolInfo(
         *queueFamilyIndices.graphicsFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     H_CHECK(vkCreateCommandPool(mDevice, &poolInfo, nullptr, &mCommandPool),
             "Failed to create command pool");
 
-    mDeleters.emplace_back([this]() {
+    mDeleter.enqueue([this]() {
         H_LOG("...destroying command pool");
         vkDestroyCommandPool(mDevice, mCommandPool, nullptr);
     });
@@ -973,7 +959,7 @@ void Application::createCommandBuffers()
     std::array<VkCommandBuffer, kMaxFramesInFlight> commandBuffers{};
 
     VkCommandBufferAllocateInfo allocInfo =
-        init::commandBufferAllocInfo(mCommandPool, static_cast<uint32_t>(commandBuffers.size()));
+        vk::commandBufferAllocInfo(mCommandPool, static_cast<uint32_t>(commandBuffers.size()));
     H_CHECK(vkAllocateCommandBuffers(mDevice, &allocInfo, commandBuffers.data()),
             "Failed to allocate command buffer");
 
@@ -992,7 +978,7 @@ void Application::createTracyContexts()
             TracyVkContext(mPhysicalDevice, mDevice, mGraphicsQueue, mFrames[i].commandBuffer);
     }
 
-    mDeleters.emplace_back([this]() {
+    mDeleter.enqueue([this]() {
         H_LOG("...destroying Tracy contexts");
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
@@ -1004,8 +990,8 @@ void Application::createTracyContexts()
 void Application::createSyncObjects()
 {
     H_LOG("...creating sync objects");
-    VkSemaphoreCreateInfo semaphoreCreateInfo = init::semaphoreInfo();
-    VkFenceCreateInfo fenceCreateInfo         = init::fenceInfo(VK_FENCE_CREATE_SIGNALED_BIT);
+    VkSemaphoreCreateInfo semaphoreCreateInfo = vk::semaphoreInfo();
+    VkFenceCreateInfo fenceCreateInfo         = vk::fenceInfo(VK_FENCE_CREATE_SIGNALED_BIT);
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
@@ -1019,7 +1005,7 @@ void Application::createSyncObjects()
                 "Failed to create sync object");
     }
 
-    mDeleters.emplace_back([this]() {
+    mDeleter.enqueue([this]() {
         H_LOG("...destroying frame sync objects");
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
@@ -1070,11 +1056,6 @@ Application::~Application()
     H_LOG("...waiting for device to be idle");
     vkDeviceWaitIdle(mDevice);
 
-    while (!mDeleters.empty())
-    {
-        Deleter nextDeleter = mDeleters.back();
-        nextDeleter();
-        mDeleters.pop_back();
-    }
+    mDeleter.flush();
 }
 }  // namespace hatgpu

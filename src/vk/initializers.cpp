@@ -4,7 +4,7 @@
 
 namespace hatgpu
 {
-namespace init
+namespace vk
 {
 VkCommandPoolCreateInfo commandPoolInfo([[maybe_unused]] uint32_t queueFamilyIndex,
                                         VkCommandPoolCreateFlags flags /*= 0*/)
@@ -356,5 +356,5 @@ VkSamplerCreateInfo samplerInfo(
 
     return info;
 }
-}  // namespace init
+}  // namespace vk
 }  // namespace hatgpu
