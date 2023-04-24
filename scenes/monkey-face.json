@@ -1,0 +1,13 @@
+{
+  "models": [
+    {
+      "path": "../assets/monkey/Suzanne.gltf"
+    }
+  ],
+  "lights": {
+    "dirLight": {
+      "direction": [0.5, 1.0, 0.2],
+      "color": [0.5, 0.5, 0.5]
+    }
+  }
+}

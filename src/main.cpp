@@ -4,7 +4,7 @@
 
 int main()
 {
-    hatgpu::ForwardRenderer app("../scenes/sponza.json");
+    hatgpu::ForwardRenderer app("../scenes/monkey-face.json");
     app.Run();
 
     return 0;

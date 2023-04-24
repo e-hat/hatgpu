@@ -249,7 +249,8 @@ void ForwardRenderer::createDescriptors()
         VkWriteDescriptorSet dirLightSetWrite = init::writeDescriptorBuffer(
             VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, mFrames[i].globalDescriptor, &dirLightBufferInfo, 2);
 
-        const size_t kLightBufferSize = sizeof(GpuPointLight) * mScene.pointLights.size();
+        const size_t kLightBufferSize =
+            sizeof(GpuPointLight) * std::max(static_cast<size_t>(1), mScene.pointLights.size());
         mFrames[i].lightBuffer = createBuffer(kLightBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                               VMA_MEMORY_USAGE_CPU_TO_GPU);
 
@@ -531,7 +532,7 @@ AllocatedBuffer ForwardRenderer::createBuffer(size_t allocSize,
     // allocate the buffer
     H_CHECK(vmaCreateBuffer(mAllocator, &bufferInfo, &vmaAllocInfo, &newBuffer.buffer,
                             &newBuffer.allocation, nullptr),
-            "Failed to allocate new buffer");
+            "Failed to allocate new buffer of size " + std::to_string(allocSize));
 
     return newBuffer;
 }
