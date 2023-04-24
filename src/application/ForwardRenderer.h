@@ -1,5 +1,5 @@
-#ifndef _INCLUDE_HATGPURENDERER_H
-#define _INCLUDE_HATGPURENDERER_H
+#ifndef _INCLUDE_FORWARDRENDERER_H
+#define _INCLUDE_FORWARDRENDERER_H
 #include "hatpch.h"
 
 #include "application/Application.h"
