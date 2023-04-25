@@ -7,7 +7,10 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include <spdlog/logger.h>
+#ifdef DEBUG
+#    define SPDLOG_ACTIVE_LEVEL SPD_LEVEL_DEBUG
+#endif
+#include <spdlog/spdlog.h>
 #include <memory>
 #define LOGGER ::hatgpu::Logger::GetOrCreateInstance()
 
