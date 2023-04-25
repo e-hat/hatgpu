@@ -20,6 +20,8 @@ set(SOURCES ${SOURCES}
         ${SOURCE_DIR}/application/InputManager.cpp
         ${SOURCE_DIR}/renderers/ForwardRenderer.h
         ${SOURCE_DIR}/renderers/ForwardRenderer.cpp
+        ${SOURCE_DIR}/renderers/BdptRenderer.h
+        ${SOURCE_DIR}/renderers/BdptRenderer.cpp
         ${SOURCE_DIR}/util/Time.h
         ${SOURCE_DIR}/util/Time.cpp
         ${SOURCE_DIR}/util/Random.h 
