@@ -35,14 +35,14 @@
             LOGGER.error("[FAILED ASSERT: {}] [{}:{}] [{}]", msg, __FILE__, __LINE__, \
                          __PRETTY_FUNCTION__);                                        \
             LOGGER.dump_backtrace();                                                  \
-            std::exit(1);                                                             \
+            BREAK;                                                                    \
         }
 
 #    define H_LOG(msg) LOGGER.debug("{}", msg);
 
 #else
-#    define H_CHECK(stmt, msg)
-#    define H_ASSERT(stmt, msg)
+#    define H_CHECK(stmt, msg) static_cast<void>(stmt)
+#    define H_ASSERT(stmt, msg) static_cast<void>(stmt)
 #    define H_LOG(msg)
 #endif
 
