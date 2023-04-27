@@ -35,14 +35,19 @@ class ForwardRenderer : public Application
 
     void OnRender() override;
     void OnImGuiRender() override;
-    void OnRecreateSwapchain() override;
+
+  protected:
+    virtual VkImageUsageFlags swapchainImageUsage() const override
+    {
+        return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    }
 
   private:
     void createRenderPass();
     void createDescriptors();
     void createGraphicsPipeline();
-    void createDepthImage();
-    void createFramebuffers(const VkRenderPass &renderPass);
+    void createDepthImage() override;
+    void createFramebuffers() override;
     void loadSceneFromDisk();
     void uploadSceneToGpu();
 
@@ -54,10 +59,6 @@ class ForwardRenderer : public Application
     VkRenderPass mRenderPass;
     VkPipelineLayout mGraphicsPipelineLayout;
     VkPipeline mGraphicsPipeline;
-    vk::Allocator mAllocator;
-
-    VkImageView mDepthImageView;
-    vk::AllocatedImage mDepthImage{};
 
     VkDescriptorSetLayout mGlobalSetLayout;
     VkDescriptorSetLayout mTextureSetLayout;

@@ -1,11 +1,13 @@
 #include "hatpch.h"
 
 #include "application/Application.h"
+#include "vk/allocator.h"
 #include "vk/initializers.h"
 
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_vulkan.h>
 #include <imgui.h>
+#include <vulkan/vulkan_core.h>
 #include <tracy/Tracy.hpp>
 #include <tracy/TracyVulkan.hpp>
 
@@ -33,7 +35,8 @@ constexpr bool kEnableValidationLayers =
     false;
 #endif
 
-const std::vector<const char *> kDeviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+const std::vector<const char *> kDeviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+                                                     VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME};
 
 bool checkValidationLayerSupport()
 {
@@ -89,7 +92,6 @@ debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     {
         // use std::endl to flush the stream, else errors might pop up at random times during
         // execution (this actually happened :O)
-        std::cerr << "HATGPU: [VULKAN VALIDATION ERROR]: " << pCallbackData->pMessage << std::endl;
         LOGGER.error(pCallbackData->pMessage);
 #ifdef VALIDATION_DEBUG_BREAK
         __builtin_trap();
@@ -141,23 +143,6 @@ void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &create
     createInfo.pfnUserCallback = debugCallback;
 }
 
-bool checkDeviceExtensionSupport(const VkPhysicalDevice &device)
-{
-    uint32_t supportedExtensionCount = 0;
-    vkEnumerateDeviceExtensionProperties(device, nullptr, &supportedExtensionCount, nullptr);
-    std::vector<VkExtensionProperties> supportedExtensions(supportedExtensionCount);
-    vkEnumerateDeviceExtensionProperties(device, nullptr, &supportedExtensionCount,
-                                         supportedExtensions.data());
-
-    std::set<std::string> requiredExtensions(kDeviceExtensions.begin(), kDeviceExtensions.end());
-    for (const auto &extension : supportedExtensions)
-    {
-        requiredExtensions.erase(extension.extensionName);
-    }
-
-    return requiredExtensions.empty();
-}
-
 struct SwapchainSupportDetails
 {
     VkSurfaceCapabilitiesKHR capabilities;
@@ -188,7 +173,7 @@ VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>
 {
     for (const auto &format : availableFormats)
     {
-        if (format.format == VK_FORMAT_B8G8R8_SRGB &&
+        if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
             format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
         {
             return format;
@@ -273,9 +258,26 @@ Application::Application(const std::string &windowName)
     : mWindow(nullptr), mWindowName(std::move(windowName)), mInputManager(this), mCamera()
 {
     mCamera.Position = {0.f, 0.f, 3.f};
+}
+
+void Application::Init()
+{
     initWindow();
     initVulkan();
     initImGui();
+
+    VmaAllocatorCreateInfo allocatorInfo = {};
+    allocatorInfo.physicalDevice         = mPhysicalDevice;
+    allocatorInfo.device                 = mDevice;
+    allocatorInfo.instance               = mInstance;
+
+    H_LOG("...creating VMA allocator");
+    mAllocator = vk::Allocator(allocatorInfo);
+
+    mDeleter.enqueue([this]() {
+        H_LOG("...destroying VMA allocator");
+        mAllocator.destroy();
+    });
 }
 
 void Application::initWindow()
@@ -317,13 +319,27 @@ void Application::initVulkan()
     mUploadContext = vk::UploadContext(mDevice, mGraphicsQueue, mGraphicsQueueIndex);
     mDeleter.enqueue([this]() { mUploadContext.destroy(); });
 }
+bool Application::checkDeviceExtensionSupport(const VkPhysicalDevice &device)
+{
+    uint32_t supportedExtensionCount = 0;
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &supportedExtensionCount, nullptr);
+    std::vector<VkExtensionProperties> supportedExtensions(supportedExtensionCount);
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &supportedExtensionCount,
+                                         supportedExtensions.data());
 
+    std::set<std::string> requiredExtensions(kDeviceExtensions.begin(), kDeviceExtensions.end());
+    for (const auto &extension : supportedExtensions)
+    {
+        requiredExtensions.erase(extension.extensionName);
+    }
+
+    return requiredExtensions.empty();
+}
 void Application::initImGui()
 {
     H_LOG("Initializing Dear ImGui");
     IMGUI_CHECKVERSION();
 
-    createUiPass();
     // 1: create descriptor pool for IMGUI
     //  the size of the pool is very oversize, but it's copied from imgui demo itself.
     VkDescriptorPoolSize poolSizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
@@ -369,7 +385,13 @@ void Application::initImGui()
     initInfo.ImageCount                = 3;
     initInfo.MSAASamples               = VK_SAMPLE_COUNT_1_BIT;
 
-    ImGui_ImplVulkan_Init(&initInfo, mUiPass);
+    VkPipelineRenderingCreateInfoKHR pipelineCreateRenderingInfo{};
+    pipelineCreateRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
+    pipelineCreateRenderingInfo.pNext = nullptr;
+    pipelineCreateRenderingInfo.colorAttachmentCount    = 1;
+    pipelineCreateRenderingInfo.pColorAttachmentFormats = &mSwapchainImageFormat;
+
+    ImGui_ImplVulkan_Init(&initInfo, VK_NULL_HANDLE, pipelineCreateRenderingInfo);
 
     // execute a gpu command to upload imgui font textures
     mUploadContext.immediateSubmit(
@@ -386,89 +408,83 @@ void Application::initImGui()
     });
 }
 
-void Application::createUiPass()
+void Application::createDepthImage()
 {
-    H_LOG("...creating UI render pass");
-    // Initialize color attachment
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format         = mSwapchainImageFormat;
-    colorAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_LOAD;
-    colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    H_LOG("...creating depth image");
+    VkExtent3D depthImageExtent = {mSwapchainExtent.width, mSwapchainExtent.height, 1};
 
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    VkImageCreateInfo imageInfo =
+        vk::imageInfo(kDepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
 
-    // Initialize depth attachment
-    VkAttachmentDescription depthAttachment{};
-    depthAttachment.format         = kDepthFormat;
-    depthAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    VmaAllocationCreateInfo allocationInfo{};
+    allocationInfo.usage         = VMA_MEMORY_USAGE_GPU_ONLY;
+    allocationInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    H_CHECK(vmaCreateImage(mAllocator.Impl, &imageInfo, &allocationInfo, &mDepthImage.image,
+                           &mDepthImage.allocation, nullptr),
+            "Failed to allocate depth image");
 
-    VkAttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 1;
-    depthAttachmentRef.layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount    = 1;
-    subpass.pColorAttachments       = &colorAttachmentRef;
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
-
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass    = 0;
-    dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    VkSubpassDependency depthDependency{};
-    depthDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    depthDependency.dstSubpass = 0;
-    depthDependency.srcStageMask =
-        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    depthDependency.srcAccessMask = 0;
-    depthDependency.dstStageMask =
-        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    depthDependency.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-    std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
-    std::array<VkSubpassDependency, 2> dependencies    = {dependency, depthDependency};
-
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    renderPassInfo.pAttachments    = attachments.data();
-    renderPassInfo.subpassCount    = 1;
-    renderPassInfo.pSubpasses      = &subpass;
-    renderPassInfo.subpassCount    = 1;
-    renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
-    renderPassInfo.pDependencies   = dependencies.data();
-
-    H_CHECK(vkCreateRenderPass(mDevice, &renderPassInfo, nullptr, &mUiPass),
-            "Failed to create render pass");
+    VkImageViewCreateInfo viewInfo =
+        vk::imageViewInfo(kDepthFormat, mDepthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT);
+    H_CHECK(vkCreateImageView(mDevice, &viewInfo, nullptr, &mDepthImageView),
+            "Failed to create depth image view");
 
     mDeleter.enqueue([this]() {
-        H_LOG("...destroying UI render pass");
-        vkDestroyRenderPass(mDevice, mUiPass, nullptr);
+        H_LOG("...destroying depth image");
+        vkDestroyImageView(mDevice, mDepthImageView, nullptr);
+        vmaDestroyImage(mAllocator.Impl, mDepthImage.image, mDepthImage.allocation);
     });
+}
+
+void Application::renderImGui(VkCommandBuffer commandBuffer)
+{
+    VkRenderingAttachmentInfo colorAttachment{};
+    colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachment.imageView   = mSwapchainImageViews[mCurrentImageIndex];
+    colorAttachment.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+    colorAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
+    colorAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+
+    VkRenderingInfo info{};
+    info.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
+    info.flags                = 0;
+    info.renderArea           = {.offset = {0, 0}, .extent = mSwapchainExtent};
+    info.layerCount           = 1;
+    info.colorAttachmentCount = 1;
+    info.pColorAttachments    = &colorAttachment;
+
+    vkCmdBeginRendering(commandBuffer, &info);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+    vkCmdEndRendering(commandBuffer);
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout           = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.newLayout           = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image               = mCurrentSwapchainImage;
+    barrier.pNext               = VK_NULL_HANDLE;
+
+    barrier.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel   = 0;
+    barrier.subresourceRange.levelCount     = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount     = 1;
+
+    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &barrier);
 }
 
 void Application::Run()
 {
-    H_LOG("Running application...");
-    Init();
+    H_LOG("...creating framebuffers");
+    createDepthImage();
 
     while (!glfwWindowShouldClose(mWindow))
     {
@@ -492,6 +508,7 @@ void Application::Run()
             }
             H_ASSERT(nextImageResult == VK_SUCCESS && nextImageResult != VK_SUBOPTIMAL_KHR,
                      "Failed to acquire swapchain image");
+            mCurrentSwapchainImage = mSwapchainImages[mCurrentImageIndex];
         }
         vkResetFences(mDevice, 1, &mCurrentApplicationFrame->inFlightFence);
         vkResetCommandBuffer(mCurrentApplicationFrame->commandBuffer, 0);
@@ -522,23 +539,12 @@ void Application::Run()
             OnRender();
         }
 
-        VkRenderPassBeginInfo uiPassBegin = vk::renderPassBeginInfo(
-            mUiPass, mSwapchainExtent, mSwapchainFramebuffers[mCurrentImageIndex]);
-        uiPassBegin.clearValueCount = 0;
-        uiPassBegin.pClearValues    = VK_NULL_HANDLE;
-
-        vkCmdBeginRenderPass(mCurrentApplicationFrame->commandBuffer, &uiPassBegin,
-                             VK_SUBPASS_CONTENTS_INLINE);
-
         {
             TracyVkZoneC(mCurrentApplicationFrame->tracyContext,
                          mCurrentApplicationFrame->commandBuffer, "ImGui RenderDrawData",
                          tracy::Color::Blue);
-            ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),
-                                            mCurrentApplicationFrame->commandBuffer);
+            renderImGui(mCurrentApplicationFrame->commandBuffer);
         }
-
-        vkCmdEndRenderPass(mCurrentApplicationFrame->commandBuffer);
 
         TracyVkCollect(mCurrentApplicationFrame->tracyContext,
                        mCurrentApplicationFrame->commandBuffer);
@@ -549,7 +555,7 @@ void Application::Run()
         std::array<VkSemaphore, 1> waitSemaphores = {
             mCurrentApplicationFrame->imageAvailableSemaphore};
         std::array<VkPipelineStageFlags, 1> waitStages = {
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT};
         submitInfo.waitSemaphoreCount               = waitSemaphores.size();
         submitInfo.pWaitSemaphores                  = waitSemaphores.data();
         submitInfo.pWaitDstStageMask                = waitStages.data();
@@ -603,7 +609,7 @@ void Application::createInstance()
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.pEngineName        = "hatgpu";
     appInfo.engineVersion      = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion         = VK_API_VERSION_1_1;
+    appInfo.apiVersion         = VK_API_VERSION_1_3;
 
     VkInstanceCreateInfo createInfo{};
     createInfo.sType            = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -790,9 +796,14 @@ void Application::createLogicalDevice()
     createInfo.enabledExtensionCount   = static_cast<uint32_t>(kDeviceExtensions.size());
     createInfo.ppEnabledExtensionNames = kDeviceExtensions.data();
 
+    VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures;
+    dynamicRenderingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+    dynamicRenderingFeatures.dynamicRendering = VK_TRUE;
+    dynamicRenderingFeatures.pNext            = nullptr;
+
     VkPhysicalDeviceShaderDrawParametersFeatures shaderDrawFeatures;
     shaderDrawFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES;
-    shaderDrawFeatures.pNext = nullptr;
+    shaderDrawFeatures.pNext = &dynamicRenderingFeatures;
     shaderDrawFeatures.shaderDrawParameters = VK_TRUE;
     createInfo.pNext                        = &shaderDrawFeatures;
 
@@ -838,7 +849,7 @@ void Application::createSwapchain()
     createInfo.imageColorSpace  = surfaceFormat.colorSpace;
     createInfo.imageExtent      = extent;
     createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    createInfo.imageUsage       = swapchainImageUsage();
 
     const QueueFamilyIndices indices           = findQueueFamilies(mPhysicalDevice, mSurface);
     std::array<uint32_t, 2> queueFamilyIndices = {indices.graphicsFamily.value(),
@@ -1000,7 +1011,6 @@ void Application::recreateSwapchain()
 
     createSwapchain();
     createSwapchainImageViews();
-    OnRecreateSwapchain();
 }
 
 Application::~Application()

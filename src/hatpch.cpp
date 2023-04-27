@@ -6,10 +6,6 @@
 #    include <signal.h>
 #endif
 
-#ifdef DEBUG
-#    define SPDLOG_ACTIVE_LEVEL SPD_LEVEL_DEBUG
-#endif
-
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -23,7 +19,7 @@ static void SignalHandler(int sig)
     // Dump the logs when we get a signal
     LOGGER.error("[SEGFAULT HANDLER] Signal {}", sig);
     LOGGER.dump_backtrace();
-    std::exit(1);
+    BREAK;
 }
 
 static void SetSegfaultHandler()

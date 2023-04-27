@@ -57,14 +57,7 @@ ForwardRenderer::ForwardRenderer(const std::string &scenePath)
 
 void ForwardRenderer::Init()
 {
-    H_LOG("Initializing forward renderer...");
-    VmaAllocatorCreateInfo allocatorInfo = {};
-    allocatorInfo.physicalDevice         = mPhysicalDevice;
-    allocatorInfo.device                 = mDevice;
-    allocatorInfo.instance               = mInstance;
-
-    H_LOG("...creating VMA allocator");
-    mAllocator = vk::Allocator(allocatorInfo);
+    Application::Init();
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying VMA allocator");
@@ -76,7 +69,6 @@ void ForwardRenderer::Init()
     loadSceneFromDisk();
     createDescriptors();
     createGraphicsPipeline();
-    createFramebuffers(mRenderPass);
 
     uploadSceneToGpu();
 }
@@ -95,23 +87,18 @@ void ForwardRenderer::OnImGuiRender()
     ImGui::Text("Look around with arrow keys. Zoom in/out with mouse wheel");
 }
 
-void ForwardRenderer::OnRecreateSwapchain()
+void ForwardRenderer::createFramebuffers()
 {
-    createFramebuffers(mRenderPass);
-}
-
-void ForwardRenderer::createFramebuffers(const VkRenderPass &renderPass)
-{
-    H_LOG("...creating framebuffers");
     mSwapchainFramebuffers.resize(mSwapchainImageViews.size());
 
     for (size_t i = 0; i < mSwapchainImageViews.size(); ++i)
     {
         std::array<VkImageView, 2> attachments = {mSwapchainImageViews[i], mDepthImageView};
 
-        VkFramebufferCreateInfo framebufferInfo = vk::framebufferInfo(renderPass, mSwapchainExtent);
-        framebufferInfo.attachmentCount         = attachments.size();
-        framebufferInfo.pAttachments            = attachments.data();
+        VkFramebufferCreateInfo framebufferInfo =
+            vk::framebufferInfo(mRenderPass, mSwapchainExtent);
+        framebufferInfo.attachmentCount = attachments.size();
+        framebufferInfo.pAttachments    = attachments.data();
 
         H_CHECK(vkCreateFramebuffer(mDevice, &framebufferInfo, nullptr, &mSwapchainFramebuffers[i]),
                 "Failed to create framebuffer");

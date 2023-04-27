@@ -15,19 +15,19 @@
 #define LOGGER ::hatgpu::Logger::GetOrCreateInstance()
 
 #ifdef DEBUG
-#    define H_CHECK(stmt, msg)                                                               \
-        if ((stmt) != VK_SUCCESS)                                                            \
-        {                                                                                    \
-            LOGGER.error("[{}] [{}:{}] [{}]", msg, __FILE__, __LINE__, __PRETTY_FUNCTION__); \
-            LOGGER.dump_backtrace();                                                         \
-            std::exit(1);                                                                    \
-        }
-
 #    if defined(_WIN32)
 #        define BREAK __debugbreak()
 #    elif defined(__GNUC__)
 #        define BREAK __builtin_trap()
 #    endif
+
+#    define H_CHECK(stmt, msg)                                                               \
+        if ((stmt) != VK_SUCCESS)                                                            \
+        {                                                                                    \
+            LOGGER.error("[{}] [{}:{}] [{}]", msg, __FILE__, __LINE__, __PRETTY_FUNCTION__); \
+            LOGGER.dump_backtrace();                                                         \
+            BREAK;                                                                           \
+        }
 
 #    define H_ASSERT(stmt, msg)                                                       \
         if (!(stmt))                                                                  \

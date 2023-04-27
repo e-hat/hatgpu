@@ -1,5 +1,6 @@
 #ifndef _INCLUDE_BDPTRENDERER_H
 #define _INCLUDE_BDPTRENDERER_H
+#include <vulkan/vulkan_core.h>
 #include "hatpch.h"
 
 #include "application/Application.h"
@@ -27,7 +28,7 @@ namespace hatgpu
 class BdptRenderer : public Application
 {
   public:
-    BdptRenderer(const std::string &scenePath);
+    BdptRenderer();
     ~BdptRenderer() override;
 
     void Init() override;
@@ -35,51 +36,50 @@ class BdptRenderer : public Application
 
     void OnRender() override;
     void OnImGuiRender() override;
-    void OnRecreateSwapchain() override;
+
+  protected:
+    bool checkDeviceExtensionSupport(const VkPhysicalDevice &device) override;
+    virtual VkImageUsageFlags swapchainImageUsage() const override
+    {
+        return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    }
+
+    inline constexpr virtual VkSubpassDependency renderSubpassDependency() const override
+    {
+        VkSubpassDependency dependency{};
+        dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass    = 0;
+        dependency.srcStageMask  = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        dependency.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        dependency.dstStageMask  = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+
+        return dependency;
+    }
 
   private:
-    void createRenderPass();
-    void createDescriptors();
-    void createGraphicsPipeline();
-    void createDepthImage();
-    void createFramebuffers(const VkRenderPass &renderPass);
-    void loadSceneFromDisk();
-    void uploadSceneToGpu();
-
-    void drawObjects(const VkCommandBuffer &commandBuffer);
+    void draw(const VkCommandBuffer &commandBuffer);
     void recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex);
 
-    void uploadTextures(Mesh &mesh);
+    void createCanvas();
+    void createPipeline();
+    void createFramebuffers() override {}
 
-    VkRenderPass mRenderPass;
-    VkPipelineLayout mGraphicsPipelineLayout;
-    VkPipeline mGraphicsPipeline;
+    VkPipeline mBdptPipeline;
+    VkPipelineLayout mBdptPipelineLayout;
+
     vk::Allocator mAllocator;
 
-    VkImageView mDepthImageView;
-    vk::AllocatedImage mDepthImage{};
-
-    VkDescriptorSetLayout mGlobalSetLayout;
-    VkDescriptorSetLayout mTextureSetLayout;
+    void transferCanvasToSwapchain(const VkCommandBuffer &commandBuffer);
 
     VkDescriptorPool mDescriptorPool;
     struct FrameData
     {
-        VkDescriptorSet globalDescriptor;
-        vk::AllocatedBuffer cameraBuffer;
-        vk::AllocatedBuffer objectBuffer;
-        vk::AllocatedBuffer dirLightBuffer;
-        vk::AllocatedBuffer lightBuffer;
+        vk::GpuTexture canvasImage;
     };
     std::array<FrameData, kMaxFramesInFlight> mFrames;
 
-    TextureManager mTextureManager;
-    std::unordered_map<std::string, vk::GpuTexture> mGpuTextures;
-
-    uint32_t mFrameCount{0};
-
-    std::string mScenePath;
-    Scene mScene;
+    size_t mFrameCount{0};
 
     vk::DeletionQueue mDeleter;
 };

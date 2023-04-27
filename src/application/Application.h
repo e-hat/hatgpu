@@ -1,9 +1,11 @@
 #ifndef _INCLUDE_APPLICATION_H
 #define _INCLUDE_APPLICATION_H
+#include <vulkan/vulkan_core.h>
 #include "hatpch.h"
 
 #include "application/InputManager.h"
 #include "util/Time.h"
+#include "vk/allocator.h"
 #include "vk/deleter.h"
 #include "vk/upload_context.h"
 
@@ -26,12 +28,11 @@ class Application
     Application(const Application &other)            = delete;
     Application &operator=(const Application &other) = delete;
 
-    virtual void Init() = 0;
+    virtual void Init();
     virtual void Exit() = 0;
 
-    virtual void OnRender()            = 0;
-    virtual void OnImGuiRender()       = 0;
-    virtual void OnRecreateSwapchain() = 0;
+    virtual void OnRender()      = 0;
+    virtual void OnImGuiRender() = 0;
 
     void Run();
 
@@ -40,6 +41,30 @@ class Application
     static constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
 
   protected:
+    vk::Allocator mAllocator;
+
+    VkImageView mDepthImageView;
+    vk::AllocatedImage mDepthImage{};
+
+    virtual void createDepthImage();
+    virtual void createFramebuffers() = 0;
+    virtual bool checkDeviceExtensionSupport(const VkPhysicalDevice &device);
+    virtual VkImageUsageFlags swapchainImageUsage() const = 0;
+
+    inline constexpr virtual VkSubpassDependency renderSubpassDependency() const
+    {
+
+        VkSubpassDependency dependency{};
+        dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass    = 0;
+        dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.srcAccessMask = 0;
+        dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+        return dependency;
+    }
+
     void immediateSubmit(std::function<void(VkCommandBuffer)> &&function);
 
     vk::UploadContext mUploadContext;
@@ -47,7 +72,7 @@ class Application
     // We are setting this to 1 since we will possibly have lots
     // of data on the GPU at once for path tracing. Seem to be easily changed
     // either way -- the path tracer will be implemented agnostic of this.
-    static constexpr int kMaxFramesInFlight = 1;
+    static constexpr size_t kMaxFramesInFlight = 1;
 
     GLFWwindow *mWindow;
     std::string mWindowName;
@@ -67,6 +92,7 @@ class Application
     VkExtent2D mSwapchainExtent;
 
     uint32_t mCurrentImageIndex;
+    VkImage mCurrentSwapchainImage = VK_NULL_HANDLE;
     std::vector<VkImage> mSwapchainImages;
     std::vector<VkFramebuffer> mSwapchainFramebuffers;
 
@@ -102,27 +128,23 @@ class Application
     uint32_t mGraphicsQueueIndex;
     VkQueue mPresentQueue;
 
-    VkRenderPass mUiPass;
-
     bool mFramebufferResized{false};
 
     VkShaderModule createShaderModule(const std::vector<char> &code);
     void recreateSwapchain();
-
-    using Deleter = std::function<void()>;
 
   private:
     void initWindow();
     void initVulkan();
     void initImGui();
 
-    void renderImGui();
+    void renderImGui(VkCommandBuffer commandBuffer);
 
     void createInstance();
     void setupDebugMessenger();
     void createSurface();
     void pickPhysicalDevice();
-    static bool isDeviceSuitable(const VkPhysicalDevice &device, const VkSurfaceKHR &surface);
+    bool isDeviceSuitable(const VkPhysicalDevice &device, const VkSurfaceKHR &surface);
     void createLogicalDevice();
     void createSwapchain();
     void cleanupSwapchain();
@@ -132,7 +154,6 @@ class Application
     void createCommandBuffers();
     void createTracyContexts();
     void createUploadContext();
-    void createUiPass();
 
     vk::DeletionQueue mDeleter;
 };
