@@ -63,7 +63,6 @@ class BdptRenderer : public Application
 
     void createCanvas();
     void createPipeline();
-    void createFramebuffers() override {}
 
     VkPipeline mBdptPipeline;
     VkPipelineLayout mBdptPipelineLayout;

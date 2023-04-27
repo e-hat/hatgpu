@@ -278,6 +278,8 @@ void Application::Init()
         H_LOG("...destroying VMA allocator");
         mAllocator.destroy();
     });
+
+    createDepthImage();
 }
 
 void Application::initWindow()
@@ -484,7 +486,6 @@ void Application::renderImGui(VkCommandBuffer commandBuffer)
 void Application::Run()
 {
     H_LOG("...creating framebuffers");
-    createDepthImage();
 
     while (!glfwWindowShouldClose(mWindow))
     {
@@ -516,6 +517,28 @@ void Application::Run()
         VkCommandBufferBeginInfo beginInfo = vk::commandBufferBeginInfo();
         H_CHECK(vkBeginCommandBuffer(mCurrentApplicationFrame->commandBuffer, &beginInfo),
                 "Failed to begin recording command buffer");
+
+        VkImageMemoryBarrier barrier;
+        barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout           = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image               = mCurrentSwapchainImage;
+        barrier.pNext               = VK_NULL_HANDLE;
+
+        barrier.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel   = 0;
+        barrier.subresourceRange.levelCount     = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount     = 1;
+
+        barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+
+        vkCmdPipelineBarrier(
+            mCurrentApplicationFrame->commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplGlfw_NewFrame();

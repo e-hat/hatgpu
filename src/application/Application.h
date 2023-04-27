@@ -47,7 +47,6 @@ class Application
     vk::AllocatedImage mDepthImage{};
 
     virtual void createDepthImage();
-    virtual void createFramebuffers() = 0;
     virtual bool checkDeviceExtensionSupport(const VkPhysicalDevice &device);
     virtual VkImageUsageFlags swapchainImageUsage() const = 0;
 

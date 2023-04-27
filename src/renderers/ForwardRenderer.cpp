@@ -1,3 +1,4 @@
+#include <vulkan/vulkan_core.h>
 #include "hatpch.h"
 
 #include "ForwardRenderer.h"
@@ -7,7 +8,6 @@
 #include "vk/initializers.h"
 #include "vk/shader.h"
 
-#include <glm/gtx/string_cast.hpp>
 #include <tracy/Tracy.hpp>
 
 #include <array>
@@ -59,13 +59,6 @@ void ForwardRenderer::Init()
 {
     Application::Init();
 
-    mDeleter.enqueue([this]() {
-        H_LOG("...destroying VMA allocator");
-        mAllocator.destroy();
-    });
-
-    createDepthImage();
-    createRenderPass();
     loadSceneFromDisk();
     createDescriptors();
     createGraphicsPipeline();
@@ -85,53 +78,6 @@ void ForwardRenderer::OnImGuiRender()
     ImGui::Text("You are viewing the forward renderer.");
     ImGui::Text("Move around with WASD, LSHIFT and LCTRL");
     ImGui::Text("Look around with arrow keys. Zoom in/out with mouse wheel");
-}
-
-void ForwardRenderer::createFramebuffers()
-{
-    mSwapchainFramebuffers.resize(mSwapchainImageViews.size());
-
-    for (size_t i = 0; i < mSwapchainImageViews.size(); ++i)
-    {
-        std::array<VkImageView, 2> attachments = {mSwapchainImageViews[i], mDepthImageView};
-
-        VkFramebufferCreateInfo framebufferInfo =
-            vk::framebufferInfo(mRenderPass, mSwapchainExtent);
-        framebufferInfo.attachmentCount = attachments.size();
-        framebufferInfo.pAttachments    = attachments.data();
-
-        H_CHECK(vkCreateFramebuffer(mDevice, &framebufferInfo, nullptr, &mSwapchainFramebuffers[i]),
-                "Failed to create framebuffer");
-    }
-}
-
-void ForwardRenderer::createDepthImage()
-{
-    H_LOG("...creating depth image");
-    VkExtent3D depthImageExtent = {mSwapchainExtent.width, mSwapchainExtent.height, 1};
-
-    VkImageCreateInfo imageInfo =
-        vk::imageInfo(kDepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling  = VK_IMAGE_TILING_OPTIMAL;
-
-    VmaAllocationCreateInfo allocationInfo{};
-    allocationInfo.usage         = VMA_MEMORY_USAGE_GPU_ONLY;
-    allocationInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    H_CHECK(vmaCreateImage(mAllocator.Impl, &imageInfo, &allocationInfo, &mDepthImage.image,
-                           &mDepthImage.allocation, nullptr),
-            "Failed to allocate depth image");
-
-    VkImageViewCreateInfo viewInfo =
-        vk::imageViewInfo(kDepthFormat, mDepthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT);
-    H_CHECK(vkCreateImageView(mDevice, &viewInfo, nullptr, &mDepthImageView),
-            "Failed to create depth image view");
-
-    mDeleter.enqueue([this]() {
-        H_LOG("...destroying depth image");
-        vkDestroyImageView(mDevice, mDepthImageView, nullptr);
-        vmaDestroyImage(mAllocator.Impl, mDepthImage.image, mDepthImage.allocation);
-    });
 }
 
 void ForwardRenderer::createDescriptors()
@@ -382,8 +328,17 @@ void ForwardRenderer::createGraphicsPipeline()
     pipelineInfo.pDynamicState       = &dynamicState;
 
     pipelineInfo.layout     = mGraphicsPipelineLayout;
-    pipelineInfo.renderPass = mRenderPass;
+    pipelineInfo.renderPass = VK_NULL_HANDLE;
     pipelineInfo.subpass    = 0;
+
+    VkPipelineRenderingCreateInfo pipelineCreateRenderingInfo{};
+    pipelineCreateRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
+    pipelineCreateRenderingInfo.pNext = nullptr;
+    pipelineCreateRenderingInfo.colorAttachmentCount    = 1;
+    pipelineCreateRenderingInfo.pColorAttachmentFormats = &mSwapchainImageFormat;
+    pipelineCreateRenderingInfo.depthAttachmentFormat   = kDepthFormat;
+
+    pipelineInfo.pNext = &pipelineCreateRenderingInfo;
 
     H_CHECK(vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
                                       &mGraphicsPipeline),
@@ -398,85 +353,6 @@ void ForwardRenderer::createGraphicsPipeline()
     {
         vkDestroyShaderModule(mDevice, stage.module, nullptr);
     }
-}
-
-void ForwardRenderer::createRenderPass()
-{
-    H_LOG("...creating render pass");
-    // Initialize color attachment
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format         = mSwapchainImageFormat;
-    colorAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    // Initialize depth attachment
-    VkAttachmentDescription depthAttachment{};
-    depthAttachment.format         = kDepthFormat;
-    depthAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-    depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 1;
-    depthAttachmentRef.layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount    = 1;
-    subpass.pColorAttachments       = &colorAttachmentRef;
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
-
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass    = 0;
-    dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    VkSubpassDependency depthDependency{};
-    depthDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    depthDependency.dstSubpass = 0;
-    depthDependency.srcStageMask =
-        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    depthDependency.srcAccessMask = 0;
-    depthDependency.dstStageMask =
-        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    depthDependency.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-    std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
-    std::array<VkSubpassDependency, 2> dependencies    = {dependency, depthDependency};
-
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    renderPassInfo.pAttachments    = attachments.data();
-    renderPassInfo.subpassCount    = 1;
-    renderPassInfo.pSubpasses      = &subpass;
-    renderPassInfo.subpassCount    = 1;
-    renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
-    renderPassInfo.pDependencies   = dependencies.data();
-
-    H_CHECK(vkCreateRenderPass(mDevice, &renderPassInfo, nullptr, &mRenderPass),
-            "Failed to create render pass");
-
-    mDeleter.enqueue([this]() {
-        H_LOG("...destroying render pass");
-        vkDestroyRenderPass(mDevice, mRenderPass, nullptr);
-    });
 }
 
 void ForwardRenderer::uploadTextures(Mesh &mesh)
@@ -622,20 +498,38 @@ void ForwardRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
         mAllocator.unmap(mFrames[mCurrentFrameIndex].lightBuffer);
     }
 
-    VkRenderPassBeginInfo renderPassInfo = vk::renderPassBeginInfo(
-        mRenderPass, mSwapchainExtent, mSwapchainFramebuffers[mCurrentImageIndex]);
-
     {
         TracyVkZoneC(mCurrentApplicationFrame->tracyContext, commandBuffer, "Renderpass Begin",
                      tracy::Color::LavenderBlush);
-        VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-        VkClearValue depthClear{};
-        depthClear.depthStencil.depth           = 1.f;
-        std::array<VkClearValue, 2> clearValues = {clearColor, depthClear};
-        renderPassInfo.clearValueCount          = static_cast<uint32_t>(clearValues.size());
-        renderPassInfo.pClearValues             = clearValues.data();
 
-        vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+        VkRenderingAttachmentInfo colorAttachment{};
+        colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        colorAttachment.imageView   = mSwapchainImageViews[mCurrentImageIndex];
+        colorAttachment.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+        colorAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.clearValue  = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+
+        VkRenderingAttachmentInfo depthAttachment{};
+        depthAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depthAttachment.imageView   = mDepthImageView;
+        depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        depthAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+        VkClearValue depthClear{};
+        depthClear.depthStencil.depth = 1.0f;
+        depthAttachment.clearValue    = depthClear;
+
+        VkRenderingInfo renderInfo{};
+        renderInfo.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
+        renderInfo.flags                = 0;
+        renderInfo.renderArea           = {.offset = {0, 0}, .extent = mSwapchainExtent};
+        renderInfo.layerCount           = 1;
+        renderInfo.colorAttachmentCount = 1;
+        renderInfo.pColorAttachments    = &colorAttachment;
+        renderInfo.pDepthAttachment     = &depthAttachment;
+
+        vkCmdBeginRendering(commandBuffer, &renderInfo);
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mGraphicsPipeline);
 
@@ -684,7 +578,7 @@ void ForwardRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
         }
     }
 
-    vkCmdEndRenderPass(commandBuffer);
+    vkCmdEndRendering(commandBuffer);
 }
 
 void ForwardRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer,

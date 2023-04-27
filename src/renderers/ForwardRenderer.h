@@ -43,11 +43,8 @@ class ForwardRenderer : public Application
     }
 
   private:
-    void createRenderPass();
     void createDescriptors();
     void createGraphicsPipeline();
-    void createDepthImage() override;
-    void createFramebuffers() override;
     void loadSceneFromDisk();
     void uploadSceneToGpu();
 
@@ -56,7 +53,6 @@ class ForwardRenderer : public Application
 
     void uploadTextures(Mesh &mesh);
 
-    VkRenderPass mRenderPass;
     VkPipelineLayout mGraphicsPipelineLayout;
     VkPipeline mGraphicsPipeline;
 
