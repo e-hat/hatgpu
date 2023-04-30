@@ -20,10 +20,12 @@
 
 namespace
 {
-const std::vector<const char *> kDeviceExtensions = {
+static const std::vector<const char *> kDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 };
-}
+
+static constexpr const char *kMainShaderName = "../shaders/bin/bdpt/main.comp.spv";
+}  // namespace
 
 namespace hatgpu
 {
@@ -71,8 +73,9 @@ void BdptRenderer::createCanvas()
 
         imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         VmaAllocationCreateInfo imgAllocInfo{};
-        vk::GpuTexture &img = frame.canvasImage;
-        imgAllocInfo.usage  = VMA_MEMORY_USAGE_GPU_ONLY;
+        frame.canvasImage.mipLevels = 1;
+        vk::GpuTexture &img         = frame.canvasImage;
+        imgAllocInfo.usage          = VMA_MEMORY_USAGE_GPU_ONLY;
         vmaCreateImage(mAllocator.Impl, &imageInfo, &imgAllocInfo, &img.image.image,
                        &img.image.allocation, nullptr);
 
@@ -129,6 +132,40 @@ bool BdptRenderer::checkDeviceExtensionSupport(const VkPhysicalDevice &device)
 void BdptRenderer::createPipeline()
 {
     H_LOG("...creating main draw pipeline");
+
+    VkPipelineShaderStageCreateInfo mainStageInfo =
+        vk::createShaderStage(mDevice, kMainShaderName, VK_SHADER_STAGE_COMPUTE_BIT);
+
+    VkPipelineLayoutCreateInfo mainLayoutInfo = vk::pipelineLayoutInfo();
+    mainLayoutInfo.setLayoutCount             = 1;
+    mainLayoutInfo.pSetLayouts                = &mGlobalDescriptorLayout;
+    mainLayoutInfo.pushConstantRangeCount     = 0;
+    mainLayoutInfo.pPushConstantRanges        = nullptr;
+
+    H_CHECK(vkCreatePipelineLayout(mDevice, &mainLayoutInfo, nullptr, &mBdptPipelineLayout),
+            "Failed to create pipeline layout");
+
+    mDeleter.enqueue([this]() {
+        H_LOG("...destroying pipeline layout object");
+        vkDestroyPipelineLayout(mDevice, mBdptPipelineLayout, nullptr);
+    });
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.pNext  = nullptr;
+    pipelineInfo.layout = mBdptPipelineLayout;
+    pipelineInfo.stage  = mainStageInfo;
+
+    H_CHECK(vkCreateComputePipelines(mDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
+                                     &mBdptPipeline),
+            "Failed to create compute pipeline");
+
+    mDeleter.enqueue([this]() {
+        H_LOG("...destroying compute pipeline");
+        vkDestroyPipeline(mDevice, mBdptPipeline, nullptr);
+    });
+
+    vkDestroyShaderModule(mDevice, mainStageInfo.module, nullptr);
 }
 
 void BdptRenderer::Exit() {}

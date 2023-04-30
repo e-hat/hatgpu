@@ -49,6 +49,9 @@ struct GpuDirLight
     glm::vec4 direction;
     glm::vec4 color;
 };
+
+static constexpr const char *kVertexShaderName   = "../shaders/bin/forward/shader.vert.spv";
+static constexpr const char *kFragmentShaderName = "../shaders/bin/forward/shader.frag.spv";
 }  // namespace
 
 ForwardRenderer::ForwardRenderer(const std::string &scenePath)
@@ -228,10 +231,8 @@ void ForwardRenderer::createGraphicsPipeline()
     H_LOG("...creating graphics pipeline");
 
     std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages = {
-        vk::createShaderStage(mDevice, "../shaders/bin/shader.vert.spv",
-                              VK_SHADER_STAGE_VERTEX_BIT),
-        vk::createShaderStage(mDevice, "../shaders/bin/shader.frag.spv",
-                              VK_SHADER_STAGE_FRAGMENT_BIT),
+        vk::createShaderStage(mDevice, kVertexShaderName, VK_SHADER_STAGE_VERTEX_BIT),
+        vk::createShaderStage(mDevice, kFragmentShaderName, VK_SHADER_STAGE_FRAGMENT_BIT),
     };
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = vk::vertexInputInfo();

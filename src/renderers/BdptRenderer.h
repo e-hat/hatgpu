@@ -61,11 +61,14 @@ class BdptRenderer : public Application
     void draw(const VkCommandBuffer &commandBuffer);
     void recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex);
 
+    void createDescriptorLayout();
     void createCanvas();
     void createPipeline();
 
-    VkPipeline mBdptPipeline;
+    VkDescriptorSetLayout mGlobalDescriptorLayout;
+
     VkPipelineLayout mBdptPipelineLayout;
+    VkPipeline mBdptPipeline;
 
     vk::Allocator mAllocator;
 
@@ -74,6 +77,7 @@ class BdptRenderer : public Application
     VkDescriptorPool mDescriptorPool;
     struct FrameData
     {
+        VkDescriptorSet globalDescriptor;
         vk::GpuTexture canvasImage;
     };
     std::array<FrameData, kMaxFramesInFlight> mFrames;
