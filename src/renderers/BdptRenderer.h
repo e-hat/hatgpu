@@ -61,11 +61,12 @@ class BdptRenderer : public Application
     void draw(const VkCommandBuffer &commandBuffer);
     void recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex);
 
+    void createDescriptorPool();
     void createDescriptorLayout();
     void createCanvas();
     void createPipeline();
 
-    VkDescriptorSetLayout mGlobalDescriptorLayout;
+    VkDescriptorSetLayout mGlobalSetLayout;
 
     VkPipelineLayout mBdptPipelineLayout;
     VkPipeline mBdptPipeline;

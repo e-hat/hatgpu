@@ -50,8 +50,10 @@ void BdptRenderer::Init()
         mAllocator.destroy();
     });
 
-    createCanvas();
+    createDescriptorPool();
+    createDescriptorLayout();
     createPipeline();
+    createCanvas();
 }
 
 void BdptRenderer::createCanvas()
@@ -129,6 +131,52 @@ bool BdptRenderer::checkDeviceExtensionSupport(const VkPhysicalDevice &device)
     return requiredExtensions.empty();
 }
 
+void BdptRenderer::createDescriptorPool()
+{
+    H_LOG("...creating descriptor set pool");
+    std::vector<VkDescriptorPoolSize> sizes = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
+                                               {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 190},
+                                               {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10},
+                                               {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 10}};
+
+    // Creating the descriptor pool
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags         = 0;
+    poolInfo.maxSets       = 300;
+    poolInfo.poolSizeCount = static_cast<uint32_t>(sizes.size());
+    poolInfo.pPoolSizes    = sizes.data();
+
+    vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &mDescriptorPool);
+
+    mDeleter.enqueue([this]() {
+        H_LOG("...destroying descriptor set pool");
+        vkDestroyDescriptorPool(mDevice, mDescriptorPool, nullptr);
+    });
+}
+
+void BdptRenderer::createDescriptorLayout()
+{
+    H_LOG("...creating main descriptor set layout");
+
+    VkDescriptorSetLayoutBinding canvasBinding = vk::descriptorSetLayoutBinding(
+        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT, 1);
+
+    VkDescriptorSetLayoutCreateInfo textureLayoutInfo{};
+    textureLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    textureLayoutInfo.pNext        = nullptr;
+    textureLayoutInfo.bindingCount = 1;
+    textureLayoutInfo.pBindings    = &canvasBinding;
+    textureLayoutInfo.flags        = 0;
+
+    vkCreateDescriptorSetLayout(mDevice, &textureLayoutInfo, nullptr, &mGlobalSetLayout);
+
+    mDeleter.enqueue([this]() {
+        H_LOG("...destroying descriptor set layout");
+        vkDestroyDescriptorSetLayout(mDevice, mGlobalSetLayout, nullptr);
+    });
+}
+
 void BdptRenderer::createPipeline()
 {
     H_LOG("...creating main draw pipeline");
@@ -138,7 +186,7 @@ void BdptRenderer::createPipeline()
 
     VkPipelineLayoutCreateInfo mainLayoutInfo = vk::pipelineLayoutInfo();
     mainLayoutInfo.setLayoutCount             = 1;
-    mainLayoutInfo.pSetLayouts                = &mGlobalDescriptorLayout;
+    mainLayoutInfo.pSetLayouts                = &mGlobalSetLayout;
     mainLayoutInfo.pushConstantRangeCount     = 0;
     mainLayoutInfo.pPushConstantRanges        = nullptr;
 
