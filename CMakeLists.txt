@@ -78,6 +78,10 @@ add_subdirectory(deps/imgui)
 target_link_libraries(hatgpu PRIVATE imgui)
 
 add_subdirectory(deps/VulkanMemoryAllocator)
+# Um I guess I have to define this macro to 0, otherwise it causes build errors. 
+# Not sure why this randomly started failing (and fails on previously working commits).
+# Tbh I don't really care. 
+target_compile_definitions(VulkanMemoryAllocator PRIVATE VMA_STATS_STRING_ENABLED=0)
 target_link_libraries(hatgpu PRIVATE VulkanMemoryAllocator)
 
 add_subdirectory(deps/tracy)
