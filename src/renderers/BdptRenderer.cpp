@@ -285,6 +285,11 @@ void BdptRenderer::OnImGuiRender()
 void BdptRenderer::draw(const VkCommandBuffer &commandBuffer)
 {
     TracyVkZoneC(mCurrentApplicationFrame->tracyContext, commandBuffer, "draw", tracy::Color::Blue);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, mBdptPipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, mBdptPipelineLayout, 0,
+                            1, &mFrames[mCurrentFrameIndex].globalDescriptor, 0, nullptr);
+    vkCmdDispatch(commandBuffer, mSwapchainExtent.width, mSwapchainExtent.height, 1);
 }
 
 void BdptRenderer::transferCanvasToSwapchain(const VkCommandBuffer &commandBuffer)
