@@ -54,6 +54,7 @@ void BdptRenderer::Init()
     createDescriptorLayout();
     createPipeline();
     createCanvas();
+    createDescriptorSets();
 }
 
 void BdptRenderer::createCanvas()
@@ -110,7 +111,8 @@ void BdptRenderer::createCanvas()
 
         VkImageViewCreateInfo canvasViewInfo = vk::imageViewInfo(
             VK_FORMAT_R8G8B8A8_UNORM, frame.canvasImage.image.image, VK_IMAGE_ASPECT_COLOR_BIT, 1);
-        vkCreateImageView(mDevice, &canvasViewInfo, nullptr, &frame.canvasImage.imageView);
+        H_CHECK(vkCreateImageView(mDevice, &canvasViewInfo, nullptr, &frame.canvasImage.imageView),
+                "failed to create canvas image view");
     }
 
     mDeleter.enqueue([this]() {
@@ -210,7 +212,8 @@ void BdptRenderer::createDescriptorSets()
         allocInfo.descriptorSetCount = 1;
         allocInfo.pSetLayouts        = &mGlobalSetLayout;
 
-        vkAllocateDescriptorSets(mDevice, &allocInfo, &mFrames[i].globalDescriptor);
+        H_CHECK(vkAllocateDescriptorSets(mDevice, &allocInfo, &mFrames[i].globalDescriptor),
+                "failed to allocate global descriptors");
 
         VkDescriptorImageInfo canvasImageInfo{};
         canvasImageInfo.sampler     = canvasSampler;
