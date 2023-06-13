@@ -4,6 +4,18 @@ layout(local_size_x = 1, local_size_y = 1) in;
 
 layout (set = 0, binding = 1, rgba8) uniform image2D canvasImage;
 
+#define kWidth 1366
+#define kHeight 768
+
 void main() {
-  imageStore(canvasImage, ivec2(gl_GlobalInvocationID.xy), vec4(0.0, 1.0, 0.0, 1.0));
+  uint row = kHeight - gl_GlobalInvocationID.y - 1;
+  uint col = gl_GlobalInvocationID.x;
+
+  float r = float(col) / (kWidth - 1);
+  float g = float(row) / (kHeight - 1);
+  float b = 0.25;
+
+  vec3 outColor = vec3(b, g, r);
+
+  imageStore(canvasImage, ivec2(gl_GlobalInvocationID.xy), vec4(outColor, 1.0));
 }
