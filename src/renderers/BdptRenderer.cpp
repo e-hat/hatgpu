@@ -66,12 +66,15 @@ void BdptRenderer::createCanvas()
         imageExtent.height          = mSwapchainExtent.height;
         imageExtent.depth           = 1;
         VkImageCreateInfo imageInfo = vk::imageInfo(
-            VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
+            VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
             imageExtent);
         imageInfo.flags = VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
-        VkFormatProperties result;
 
-        vkGetPhysicalDeviceFormatProperties(mPhysicalDevice, VK_FORMAT_R8G8B8A8_UNORM, &result);
+        VkFormatProperties formatProperties;
+        vkGetPhysicalDeviceFormatProperties(mPhysicalDevice, VK_FORMAT_R8G8B8A8_UNORM,
+                                            &formatProperties);
+        H_ASSERT(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT,
+                 "requested image format does not support image storage operations");
 
         imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         VmaAllocationCreateInfo imgAllocInfo{};
@@ -104,11 +107,16 @@ void BdptRenderer::createCanvas()
                                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
                                  &barrier);
         });
+
+        VkImageViewCreateInfo canvasViewInfo = vk::imageViewInfo(
+            VK_FORMAT_R8G8B8A8_UNORM, frame.canvasImage.image.image, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+        vkCreateImageView(mDevice, &canvasViewInfo, nullptr, &frame.canvasImage.imageView);
     }
 
     mDeleter.enqueue([this]() {
         for (FrameData &frame : mFrames)
         {
+            vkDestroyImageView(mDevice, frame.canvasImage.imageView, nullptr);
             frame.canvasImage.destroy(mAllocator);
         }
     });
@@ -175,6 +183,47 @@ void BdptRenderer::createDescriptorLayout()
         H_LOG("...destroying descriptor set layout");
         vkDestroyDescriptorSetLayout(mDevice, mGlobalSetLayout, nullptr);
     });
+}
+
+void BdptRenderer::createDescriptorSets()
+{
+    H_LOG("...creating main descriptor set");
+
+    // Create canvas sampler
+    VkSamplerCreateInfo canvasSamplerInfo = vk::samplerInfo(VK_FILTER_LINEAR);
+    canvasSamplerInfo.mipmapMode          = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    canvasSamplerInfo.maxLod              = 1;
+    canvasSamplerInfo.anisotropyEnable    = VK_FALSE;
+    canvasSamplerInfo.mipLodBias          = 0.f;
+    VkSampler canvasSampler;
+    vkCreateSampler(mDevice, &canvasSamplerInfo, nullptr, &canvasSampler);
+    mDeleter.enqueue(
+        [this, canvasSampler]() { vkDestroySampler(mDevice, canvasSampler, nullptr); });
+
+    for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+    {
+        // Create this descriptor set
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.pNext              = nullptr;
+        allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool     = mDescriptorPool;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts        = &mGlobalSetLayout;
+
+        vkAllocateDescriptorSets(mDevice, &allocInfo, &mFrames[i].globalDescriptor);
+
+        VkDescriptorImageInfo canvasImageInfo{};
+        canvasImageInfo.sampler     = canvasSampler;
+        canvasImageInfo.imageView   = mFrames[i].canvasImage.imageView;
+        canvasImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+        VkWriteDescriptorSet canvasSetWrite = vk::writeDescriptorImage(
+            VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, mFrames[i].globalDescriptor, &canvasImageInfo, 1);
+
+        std::array<VkWriteDescriptorSet, 1> writes = {canvasSetWrite};
+
+        vkUpdateDescriptorSets(mDevice, writes.size(), writes.data(), 0, nullptr);
+    }
 }
 
 void BdptRenderer::createPipeline()

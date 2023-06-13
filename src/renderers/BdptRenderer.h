@@ -39,7 +39,7 @@ class BdptRenderer : public Application
 
   protected:
     bool checkDeviceExtensionSupport(const VkPhysicalDevice &device) override;
-    virtual VkImageUsageFlags swapchainImageUsage() const override
+    inline constexpr virtual VkImageUsageFlags swapchainImageUsage() const override
     {
         return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     }
@@ -63,6 +63,7 @@ class BdptRenderer : public Application
 
     void createDescriptorPool();
     void createDescriptorLayout();
+    void createDescriptorSets();
     void createCanvas();
     void createPipeline();
 
