@@ -14,7 +14,6 @@
 #include <array>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <set>
 #include <stdexcept>
 
@@ -25,6 +24,40 @@ static const std::vector<const char *> kDeviceExtensions = {
 };
 
 static constexpr const char *kMainShaderName = "../shaders/bin/bdpt/main.comp.spv";
+
+struct GpuRayGenConstants
+{
+    glm::vec4 origin;
+    glm::vec4 horizontal;
+    glm::vec4 vertical;
+    glm::vec4 lowerLeftCorner;
+
+    glm::uvec2 viewportExtent;
+};
+
+GpuRayGenConstants makeGpuRayGenConstants(size_t width, size_t height)
+{
+    float aspectRatio = static_cast<float>(width) / height;
+
+    float viewportHeight = 2.0f;
+    float viewportWidth  = aspectRatio * viewportHeight;
+    // TODO: Probably put this in the camera class, or somehow make this configurable?
+    float focalLength = 1.0f;
+
+    GpuRayGenConstants result{};
+    result.origin          = glm::vec4(0.f);
+    result.horizontal      = glm::vec4(viewportWidth, 0.f, 0.f, 0.f);
+    result.vertical        = glm::vec4(0.f, viewportHeight, 0.f, 0.f);
+    result.lowerLeftCorner = result.origin - result.horizontal * 0.5f - result.vertical * 0.5f -
+                             glm::vec4(0.f, 0.f, focalLength, 0.f);
+    result.viewportExtent = glm::uvec2(width, height);
+
+    return result;
+}
+
+constexpr size_t kCanvasBindingLocation          = 0;
+constexpr size_t kRayGenConstantsBindingLocation = 1;
+
 }  // namespace
 
 namespace hatgpu
@@ -170,16 +203,21 @@ void BdptRenderer::createDescriptorLayout()
     H_LOG("...creating main descriptor set layout");
 
     VkDescriptorSetLayoutBinding canvasBinding = vk::descriptorSetLayoutBinding(
-        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT, 1);
+        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT, kCanvasBindingLocation);
+    VkDescriptorSetLayoutBinding rayGenConstantsBinding = vk::descriptorSetLayoutBinding(
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT,
+        kRayGenConstantsBindingLocation);
 
-    VkDescriptorSetLayoutCreateInfo textureLayoutInfo{};
-    textureLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    textureLayoutInfo.pNext        = nullptr;
-    textureLayoutInfo.bindingCount = 1;
-    textureLayoutInfo.pBindings    = &canvasBinding;
-    textureLayoutInfo.flags        = 0;
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings = {canvasBinding, rayGenConstantsBinding};
 
-    vkCreateDescriptorSetLayout(mDevice, &textureLayoutInfo, nullptr, &mGlobalSetLayout);
+    VkDescriptorSetLayoutCreateInfo globalLayoutInfo{};
+    globalLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    globalLayoutInfo.pNext        = nullptr;
+    globalLayoutInfo.bindingCount = bindings.size();
+    globalLayoutInfo.pBindings    = bindings.data();
+    globalLayoutInfo.flags        = 0;
+
+    vkCreateDescriptorSetLayout(mDevice, &globalLayoutInfo, nullptr, &mGlobalSetLayout);
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying descriptor set layout");
@@ -202,6 +240,9 @@ void BdptRenderer::createDescriptorSets()
     mDeleter.enqueue(
         [this, canvasSampler]() { vkDestroySampler(mDevice, canvasSampler, nullptr); });
 
+    GpuRayGenConstants gpuRayGenConstants =
+        makeGpuRayGenConstants(mSwapchainExtent.width, mSwapchainExtent.height);
+
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
         // Create this descriptor set
@@ -220,13 +261,40 @@ void BdptRenderer::createDescriptorSets()
         canvasImageInfo.imageView   = mFrames[i].canvasImage.imageView;
         canvasImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-        VkWriteDescriptorSet canvasSetWrite = vk::writeDescriptorImage(
-            VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, mFrames[i].globalDescriptor, &canvasImageInfo, 1);
+        VkWriteDescriptorSet canvasSetWrite =
+            vk::writeDescriptorImage(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, mFrames[i].globalDescriptor,
+                                     &canvasImageInfo, kCanvasBindingLocation);
 
-        std::array<VkWriteDescriptorSet, 1> writes = {canvasSetWrite};
+        mFrames[i].rayGenConstantsBuffer =
+            mAllocator.createBuffer(sizeof(GpuRayGenConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                    VMA_MEMORY_USAGE_CPU_TO_GPU);
+        // Writing raygen constant data
+        auto data =
+            static_cast<GpuRayGenConstants *>(mAllocator.map(mFrames[i].rayGenConstantsBuffer));
+        *data = gpuRayGenConstants;
+        mAllocator.unmap(mFrames[i].rayGenConstantsBuffer);
+
+        VkDescriptorBufferInfo rayGenConstantsInfo{};
+        rayGenConstantsInfo.buffer = mFrames[i].rayGenConstantsBuffer.buffer;
+        rayGenConstantsInfo.offset = 0;
+        rayGenConstantsInfo.range  = VK_WHOLE_SIZE;
+
+        VkWriteDescriptorSet rayGenConstantsSetWrite = vk::writeDescriptorBuffer(
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, mFrames[i].globalDescriptor, &rayGenConstantsInfo,
+            kRayGenConstantsBindingLocation);
+
+        std::array<VkWriteDescriptorSet, 2> writes = {canvasSetWrite, rayGenConstantsSetWrite};
 
         vkUpdateDescriptorSets(mDevice, writes.size(), writes.data(), 0, nullptr);
     }
+
+    mDeleter.enqueue([this]() {
+        H_LOG("...deleting buffers");
+        for (size_t i = 0; i < kMaxFramesInFlight; ++i)
+        {
+            mAllocator.destroyBuffer(mFrames[i].rayGenConstantsBuffer);
+        }
+    });
 }
 
 void BdptRenderer::createPipeline()

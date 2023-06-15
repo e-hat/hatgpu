@@ -81,6 +81,7 @@ class BdptRenderer : public Application
     {
         VkDescriptorSet globalDescriptor;
         vk::GpuTexture canvasImage;
+        vk::AllocatedBuffer rayGenConstantsBuffer;
     };
     std::array<FrameData, kMaxFramesInFlight> mFrames;
 
