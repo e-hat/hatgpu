@@ -1,5 +1,7 @@
 #ifndef _INCLUDE_MESH_H
 #define _INCLUDE_MESH_H
+#include "geometry/Aabb.h"
+#include "geometry/Hittable.h"
 #include "hatpch.h"
 
 #include "texture/Texture.h"
@@ -54,7 +56,7 @@ struct Vertex
     }
 };
 
-struct Mesh
+struct Mesh : public Hittable
 {
     using IndexType = uint32_t;
 
@@ -72,6 +74,8 @@ struct Mesh
 
     void upload(vk::Allocator &allocator, vk::UploadContext &context);
     void destroyBuffers(vk::Allocator &allocator);
+
+    // virtual Aabb BoundingBox() const override;
 };
 }  // namespace hatgpu
 
