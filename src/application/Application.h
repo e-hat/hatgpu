@@ -3,9 +3,11 @@
 #include <vulkan/vulkan_core.h>
 #include "hatpch.h"
 
+#include "Layer.h"
 #include "application/InputManager.h"
 #include "util/Time.h"
 #include "vk/allocator.h"
+#include "vk/ctx.h"
 #include "vk/deleter.h"
 #include "vk/upload_context.h"
 
@@ -41,6 +43,8 @@ class Application
     static constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
 
   protected:
+    std::vector<std::unique_ptr<Layer>> mLayers;
+
     vk::Allocator mAllocator;
 
     VkImageView mDepthImageView;
@@ -80,15 +84,7 @@ class Application
     Camera mCamera;
     std::vector<VkImageView> mSwapchainImageViews;
 
-    VkInstance mInstance;
-    VkDebugUtilsMessengerEXT mDebugMessenger;
-    VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
-    VkPhysicalDeviceProperties mGpuProperties;
-    VkDevice mDevice;
-    VkSurfaceKHR mSurface;
-    VkSwapchainKHR mSwapchain;
-    VkFormat mSwapchainImageFormat;
-    VkExtent2D mSwapchainExtent;
+    VkCtx mCtx;
 
     uint32_t mCurrentImageIndex;
     VkImage mCurrentSwapchainImage = VK_NULL_HANDLE;

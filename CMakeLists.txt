@@ -41,6 +41,7 @@ set(SOURCES ${SOURCES}
         ${SOURCE_DIR}/vk/upload_context.h
         ${SOURCE_DIR}/vk/upload_context.cpp
         ${SOURCE_DIR}/vk/deleter.h
+        ${SOURCE_DIR}/vk/ctx.h
         ${SOURCE_DIR}/texture/Texture.h
         ${SOURCE_DIR}/texture/Texture.cpp
         ${SOURCE_DIR}/geometry/prim/Sphere.h

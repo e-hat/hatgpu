@@ -98,7 +98,7 @@ void ForwardRenderer::createDescriptors()
     poolInfo.poolSizeCount = static_cast<uint32_t>(sizes.size());
     poolInfo.pPoolSizes    = sizes.data();
 
-    vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &mDescriptorPool);
+    vkCreateDescriptorPool(mCtx.device, &poolInfo, nullptr, &mDescriptorPool);
 
     // Creating the global descriptor set, which contains camera info as well as all the object
     // transforms
@@ -122,7 +122,7 @@ void ForwardRenderer::createDescriptors()
     globalCreateInfo.pBindings    = layoutBindings.data();
     globalCreateInfo.flags        = 0;
 
-    H_CHECK(vkCreateDescriptorSetLayout(mDevice, &globalCreateInfo, nullptr, &mGlobalSetLayout),
+    H_CHECK(vkCreateDescriptorSetLayout(mCtx.device, &globalCreateInfo, nullptr, &mGlobalSetLayout),
             "Unable to create global descriptor set layout");
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
@@ -144,7 +144,7 @@ void ForwardRenderer::createDescriptors()
         allocInfo.descriptorSetCount = 1;
         allocInfo.pSetLayouts        = &mGlobalSetLayout;
 
-        vkAllocateDescriptorSets(mDevice, &allocInfo, &mFrames[i].globalDescriptor);
+        vkAllocateDescriptorSets(mCtx.device, &allocInfo, &mFrames[i].globalDescriptor);
 
         // Use GpuCameraData for the first binding
         VkDescriptorBufferInfo cameraBufferInfo{};
@@ -190,7 +190,7 @@ void ForwardRenderer::createDescriptors()
         std::array<VkWriteDescriptorSet, 4> writes = {cameraSetWrite, objSetWrite, dirLightSetWrite,
                                                       lightSetWrite};
 
-        vkUpdateDescriptorSets(mDevice, writes.size(), writes.data(), 0, nullptr);
+        vkUpdateDescriptorSets(mCtx.device, writes.size(), writes.data(), 0, nullptr);
     }
 
     VkDescriptorSetLayoutBinding albedoBinding = vk::descriptorSetLayoutBinding(
@@ -207,13 +207,13 @@ void ForwardRenderer::createDescriptors()
     textureLayoutInfo.pBindings    = textureBindings.data();
     textureLayoutInfo.flags        = 0;
 
-    vkCreateDescriptorSetLayout(mDevice, &textureLayoutInfo, nullptr, &mTextureSetLayout);
+    vkCreateDescriptorSetLayout(mCtx.device, &textureLayoutInfo, nullptr, &mTextureSetLayout);
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying descriptor sets");
-        vkDestroyDescriptorSetLayout(mDevice, mGlobalSetLayout, nullptr);
-        vkDestroyDescriptorSetLayout(mDevice, mTextureSetLayout, nullptr);
-        vkDestroyDescriptorPool(mDevice, mDescriptorPool, nullptr);
+        vkDestroyDescriptorSetLayout(mCtx.device, mGlobalSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(mCtx.device, mTextureSetLayout, nullptr);
+        vkDestroyDescriptorPool(mCtx.device, mDescriptorPool, nullptr);
 
         H_LOG("...destroying buffers");
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
@@ -231,8 +231,8 @@ void ForwardRenderer::createGraphicsPipeline()
     H_LOG("...creating graphics pipeline");
 
     std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages = {
-        vk::createShaderStage(mDevice, kVertexShaderName, VK_SHADER_STAGE_VERTEX_BIT),
-        vk::createShaderStage(mDevice, kFragmentShaderName, VK_SHADER_STAGE_FRAGMENT_BIT),
+        vk::createShaderStage(mCtx.device, kVertexShaderName, VK_SHADER_STAGE_VERTEX_BIT),
+        vk::createShaderStage(mCtx.device, kFragmentShaderName, VK_SHADER_STAGE_FRAGMENT_BIT),
     };
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = vk::vertexInputInfo();
@@ -252,14 +252,14 @@ void ForwardRenderer::createGraphicsPipeline()
     VkViewport viewport{};
     viewport.x        = 0.0f;
     viewport.y        = 0.0f;
-    viewport.width    = static_cast<float>(mSwapchainExtent.width);
-    viewport.height   = static_cast<float>(mSwapchainExtent.height);
+    viewport.width    = static_cast<float>(mCtx.swapchainExtent.width);
+    viewport.height   = static_cast<float>(mCtx.swapchainExtent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
     VkRect2D scissor{};
     scissor.offset = {0, 0};
-    scissor.extent = mSwapchainExtent;
+    scissor.extent = mCtx.swapchainExtent;
 
     VkPipelineViewportStateCreateInfo viewportState{};
     viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -298,13 +298,13 @@ void ForwardRenderer::createGraphicsPipeline()
     pipelineLayoutCreateInfo.setLayoutCount             = layouts.size();
     pipelineLayoutCreateInfo.pSetLayouts                = layouts.data();
 
-    H_CHECK(vkCreatePipelineLayout(mDevice, &pipelineLayoutCreateInfo, nullptr,
+    H_CHECK(vkCreatePipelineLayout(mCtx.device, &pipelineLayoutCreateInfo, nullptr,
                                    &mGraphicsPipelineLayout),
             "Failed to create pipeline layout object");
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying graphics pipeline layout");
-        vkDestroyPipelineLayout(mDevice, mGraphicsPipelineLayout, nullptr);
+        vkDestroyPipelineLayout(mCtx.device, mGraphicsPipelineLayout, nullptr);
     });
 
     std::array<VkDynamicState, 2> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
@@ -336,29 +336,29 @@ void ForwardRenderer::createGraphicsPipeline()
     pipelineCreateRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
     pipelineCreateRenderingInfo.pNext = nullptr;
     pipelineCreateRenderingInfo.colorAttachmentCount    = 1;
-    pipelineCreateRenderingInfo.pColorAttachmentFormats = &mSwapchainImageFormat;
+    pipelineCreateRenderingInfo.pColorAttachmentFormats = &mCtx.swapchainImageFormat;
     pipelineCreateRenderingInfo.depthAttachmentFormat   = kDepthFormat;
 
     pipelineInfo.pNext = &pipelineCreateRenderingInfo;
 
-    H_CHECK(vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
+    H_CHECK(vkCreateGraphicsPipelines(mCtx.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
                                       &mGraphicsPipeline),
             "Failed to create graphics pipeline");
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying graphics pipeline");
-        vkDestroyPipeline(mDevice, mGraphicsPipeline, nullptr);
+        vkDestroyPipeline(mCtx.device, mGraphicsPipeline, nullptr);
     });
 
     for (const auto &stage : shaderStages)
     {
-        vkDestroyShaderModule(mDevice, stage.module, nullptr);
+        vkDestroyShaderModule(mCtx.device, stage.module, nullptr);
     }
 }
 
 void ForwardRenderer::uploadTextures(Mesh &mesh)
 {
-    Texture::checkRequiredFormatProperties(mPhysicalDevice);
+    Texture::checkRequiredFormatProperties(mCtx.physicalDevice);
 
     // Each mesh has its own descriptor set allocated from the global pool
     VkDescriptorSetAllocateInfo textureDescriptorInfo{};
@@ -367,7 +367,7 @@ void ForwardRenderer::uploadTextures(Mesh &mesh)
     textureDescriptorInfo.descriptorPool     = mDescriptorPool;
     textureDescriptorInfo.descriptorSetCount = 1;
     textureDescriptorInfo.pSetLayouts        = &mTextureSetLayout;
-    vkAllocateDescriptorSets(mDevice, &textureDescriptorInfo, &mesh.descriptor);
+    vkAllocateDescriptorSets(mCtx.device, &textureDescriptorInfo, &mesh.descriptor);
 
     // We go through all of a mesh's textures and upload them to the GPU
     for (const auto &[typ, path] : mesh.textures)
@@ -377,7 +377,7 @@ void ForwardRenderer::uploadTextures(Mesh &mesh)
             continue;
 
         std::shared_ptr<Texture> cpuTexture = mTextureManager.textures[path];
-        vk::GpuTexture gpuTexture = cpuTexture->upload(mDevice, mAllocator, mUploadContext);
+        vk::GpuTexture gpuTexture = cpuTexture->upload(mCtx.device, mAllocator, mUploadContext);
         mGpuTextures[path]        = gpuTexture;
 
         // Get rid of the staging buffer, queue the deletion operation for the GPU image
@@ -392,11 +392,11 @@ void ForwardRenderer::uploadTextures(Mesh &mesh)
         samplerInfo.anisotropyEnable    = VK_TRUE;
         samplerInfo.mipLodBias          = -0.5f;
         VkPhysicalDeviceProperties properties;
-        vkGetPhysicalDeviceProperties(mPhysicalDevice, &properties);
+        vkGetPhysicalDeviceProperties(mCtx.physicalDevice, &properties);
         samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
         VkSampler sampler;
-        vkCreateSampler(mDevice, &samplerInfo, nullptr, &sampler);
-        mDeleter.enqueue([this, sampler]() { vkDestroySampler(mDevice, sampler, nullptr); });
+        vkCreateSampler(mCtx.device, &samplerInfo, nullptr, &sampler);
+        mDeleter.enqueue([this, sampler]() { vkDestroySampler(mCtx.device, sampler, nullptr); });
 
         VkDescriptorImageInfo imageBufferInfo{};
         imageBufferInfo.sampler     = sampler;
@@ -416,7 +416,7 @@ void ForwardRenderer::uploadTextures(Mesh &mesh)
         VkWriteDescriptorSet descriptorWrite =
             vk::writeDescriptorImage(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, mesh.descriptor,
                                      &imageBufferInfo, dstBinding);
-        vkUpdateDescriptorSets(mDevice, 1, &descriptorWrite, 0, nullptr);
+        vkUpdateDescriptorSets(mCtx.device, 1, &descriptorWrite, 0, nullptr);
     }
 }
 
@@ -444,7 +444,7 @@ void ForwardRenderer::uploadSceneToGpu()
         H_LOG("...destroying texture image views");
         for (const auto &[_, texture] : mGpuTextures)
         {
-            vkDestroyImageView(mDevice, texture.imageView, nullptr);
+            vkDestroyImageView(mCtx.device, texture.imageView, nullptr);
         }
     });
 }
@@ -524,7 +524,7 @@ void ForwardRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
         VkRenderingInfo renderInfo{};
         renderInfo.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
         renderInfo.flags                = 0;
-        renderInfo.renderArea           = {.offset = {0, 0}, .extent = mSwapchainExtent};
+        renderInfo.renderArea           = {.offset = {0, 0}, .extent = mCtx.swapchainExtent};
         renderInfo.layerCount           = 1;
         renderInfo.colorAttachmentCount = 1;
         renderInfo.pColorAttachments    = &colorAttachment;
@@ -543,15 +543,15 @@ void ForwardRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
         VkViewport viewport{};
         viewport.x        = 0.0f;
         viewport.y        = 0.0f;
-        viewport.width    = static_cast<float>(mSwapchainExtent.width);
-        viewport.height   = static_cast<float>(mSwapchainExtent.height);
+        viewport.width    = static_cast<float>(mCtx.swapchainExtent.width);
+        viewport.height   = static_cast<float>(mCtx.swapchainExtent.height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
         VkRect2D scissor{};
         scissor.offset = {0, 0};
-        scissor.extent = mSwapchainExtent;
+        scissor.extent = mCtx.swapchainExtent;
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
     }
 
@@ -594,7 +594,7 @@ ForwardRenderer::~ForwardRenderer()
 {
     H_LOG("Destroying Forward Renderer...");
     H_LOG("...waiting for device to be idle");
-    vkDeviceWaitIdle(mDevice);
+    vkDeviceWaitIdle(mCtx.device);
 
     mDeleter.flush();
 }

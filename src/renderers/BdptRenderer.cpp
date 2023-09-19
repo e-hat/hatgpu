@@ -71,9 +71,9 @@ void BdptRenderer::Init()
 
     H_LOG("Initializing bdpt renderer...");
     VmaAllocatorCreateInfo allocatorInfo = {};
-    allocatorInfo.physicalDevice         = mPhysicalDevice;
-    allocatorInfo.device                 = mDevice;
-    allocatorInfo.instance               = mInstance;
+    allocatorInfo.physicalDevice         = mCtx.physicalDevice;
+    allocatorInfo.device                 = mCtx.device;
+    allocatorInfo.instance               = mCtx.instance;
 
     H_LOG("...creating VMA allocator");
     mAllocator = vk::Allocator(allocatorInfo);
@@ -96,8 +96,8 @@ void BdptRenderer::createCanvas()
     for (FrameData &frame : mFrames)
     {
         VkExtent3D imageExtent;
-        imageExtent.width           = mSwapchainExtent.width;
-        imageExtent.height          = mSwapchainExtent.height;
+        imageExtent.width           = mCtx.swapchainExtent.width;
+        imageExtent.height          = mCtx.swapchainExtent.height;
         imageExtent.depth           = 1;
         VkImageCreateInfo imageInfo = vk::imageInfo(
             VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
@@ -105,7 +105,7 @@ void BdptRenderer::createCanvas()
         imageInfo.flags = VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
 
         VkFormatProperties formatProperties;
-        vkGetPhysicalDeviceFormatProperties(mPhysicalDevice, VK_FORMAT_R8G8B8A8_UNORM,
+        vkGetPhysicalDeviceFormatProperties(mCtx.physicalDevice, VK_FORMAT_R8G8B8A8_UNORM,
                                             &formatProperties);
         H_ASSERT(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT,
                  "requested image format does not support image storage operations");
@@ -144,14 +144,15 @@ void BdptRenderer::createCanvas()
 
         VkImageViewCreateInfo canvasViewInfo = vk::imageViewInfo(
             VK_FORMAT_R8G8B8A8_UNORM, frame.canvasImage.image.image, VK_IMAGE_ASPECT_COLOR_BIT, 1);
-        H_CHECK(vkCreateImageView(mDevice, &canvasViewInfo, nullptr, &frame.canvasImage.imageView),
-                "failed to create canvas image view");
+        H_CHECK(
+            vkCreateImageView(mCtx.device, &canvasViewInfo, nullptr, &frame.canvasImage.imageView),
+            "failed to create canvas image view");
     }
 
     mDeleter.enqueue([this]() {
         for (FrameData &frame : mFrames)
         {
-            vkDestroyImageView(mDevice, frame.canvasImage.imageView, nullptr);
+            vkDestroyImageView(mCtx.device, frame.canvasImage.imageView, nullptr);
             frame.canvasImage.destroy(mAllocator);
         }
     });
@@ -190,11 +191,11 @@ void BdptRenderer::createDescriptorPool()
     poolInfo.poolSizeCount = static_cast<uint32_t>(sizes.size());
     poolInfo.pPoolSizes    = sizes.data();
 
-    vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &mDescriptorPool);
+    vkCreateDescriptorPool(mCtx.device, &poolInfo, nullptr, &mDescriptorPool);
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying descriptor set pool");
-        vkDestroyDescriptorPool(mDevice, mDescriptorPool, nullptr);
+        vkDestroyDescriptorPool(mCtx.device, mDescriptorPool, nullptr);
     });
 }
 
@@ -217,11 +218,11 @@ void BdptRenderer::createDescriptorLayout()
     globalLayoutInfo.pBindings    = bindings.data();
     globalLayoutInfo.flags        = 0;
 
-    vkCreateDescriptorSetLayout(mDevice, &globalLayoutInfo, nullptr, &mGlobalSetLayout);
+    vkCreateDescriptorSetLayout(mCtx.device, &globalLayoutInfo, nullptr, &mGlobalSetLayout);
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying descriptor set layout");
-        vkDestroyDescriptorSetLayout(mDevice, mGlobalSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(mCtx.device, mGlobalSetLayout, nullptr);
     });
 }
 
@@ -236,12 +237,12 @@ void BdptRenderer::createDescriptorSets()
     canvasSamplerInfo.anisotropyEnable    = VK_FALSE;
     canvasSamplerInfo.mipLodBias          = 0.f;
     VkSampler canvasSampler;
-    vkCreateSampler(mDevice, &canvasSamplerInfo, nullptr, &canvasSampler);
+    vkCreateSampler(mCtx.device, &canvasSamplerInfo, nullptr, &canvasSampler);
     mDeleter.enqueue(
-        [this, canvasSampler]() { vkDestroySampler(mDevice, canvasSampler, nullptr); });
+        [this, canvasSampler]() { vkDestroySampler(mCtx.device, canvasSampler, nullptr); });
 
     GpuRayGenConstants gpuRayGenConstants =
-        makeGpuRayGenConstants(mSwapchainExtent.width, mSwapchainExtent.height);
+        makeGpuRayGenConstants(mCtx.swapchainExtent.width, mCtx.swapchainExtent.height);
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
@@ -253,7 +254,7 @@ void BdptRenderer::createDescriptorSets()
         allocInfo.descriptorSetCount = 1;
         allocInfo.pSetLayouts        = &mGlobalSetLayout;
 
-        H_CHECK(vkAllocateDescriptorSets(mDevice, &allocInfo, &mFrames[i].globalDescriptor),
+        H_CHECK(vkAllocateDescriptorSets(mCtx.device, &allocInfo, &mFrames[i].globalDescriptor),
                 "failed to allocate global descriptors");
 
         VkDescriptorImageInfo canvasImageInfo{};
@@ -285,7 +286,7 @@ void BdptRenderer::createDescriptorSets()
 
         std::array<VkWriteDescriptorSet, 2> writes = {canvasSetWrite, rayGenConstantsSetWrite};
 
-        vkUpdateDescriptorSets(mDevice, writes.size(), writes.data(), 0, nullptr);
+        vkUpdateDescriptorSets(mCtx.device, writes.size(), writes.data(), 0, nullptr);
     }
 
     mDeleter.enqueue([this]() {
@@ -302,7 +303,7 @@ void BdptRenderer::createPipeline()
     H_LOG("...creating main draw pipeline");
 
     VkPipelineShaderStageCreateInfo mainStageInfo =
-        vk::createShaderStage(mDevice, kMainShaderName, VK_SHADER_STAGE_COMPUTE_BIT);
+        vk::createShaderStage(mCtx.device, kMainShaderName, VK_SHADER_STAGE_COMPUTE_BIT);
 
     VkPipelineLayoutCreateInfo mainLayoutInfo = vk::pipelineLayoutInfo();
     mainLayoutInfo.setLayoutCount             = 1;
@@ -310,12 +311,12 @@ void BdptRenderer::createPipeline()
     mainLayoutInfo.pushConstantRangeCount     = 0;
     mainLayoutInfo.pPushConstantRanges        = nullptr;
 
-    H_CHECK(vkCreatePipelineLayout(mDevice, &mainLayoutInfo, nullptr, &mBdptPipelineLayout),
+    H_CHECK(vkCreatePipelineLayout(mCtx.device, &mainLayoutInfo, nullptr, &mBdptPipelineLayout),
             "Failed to create pipeline layout");
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying pipeline layout object");
-        vkDestroyPipelineLayout(mDevice, mBdptPipelineLayout, nullptr);
+        vkDestroyPipelineLayout(mCtx.device, mBdptPipelineLayout, nullptr);
     });
 
     VkComputePipelineCreateInfo pipelineInfo{};
@@ -324,16 +325,16 @@ void BdptRenderer::createPipeline()
     pipelineInfo.layout = mBdptPipelineLayout;
     pipelineInfo.stage  = mainStageInfo;
 
-    H_CHECK(vkCreateComputePipelines(mDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
+    H_CHECK(vkCreateComputePipelines(mCtx.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
                                      &mBdptPipeline),
             "Failed to create compute pipeline");
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying compute pipeline");
-        vkDestroyPipeline(mDevice, mBdptPipeline, nullptr);
+        vkDestroyPipeline(mCtx.device, mBdptPipeline, nullptr);
     });
 
-    vkDestroyShaderModule(mDevice, mainStageInfo.module, nullptr);
+    vkDestroyShaderModule(mCtx.device, mainStageInfo.module, nullptr);
 }
 
 void BdptRenderer::Exit() {}
@@ -357,7 +358,7 @@ void BdptRenderer::draw(const VkCommandBuffer &commandBuffer)
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, mBdptPipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, mBdptPipelineLayout, 0,
                             1, &mFrames[mCurrentFrameIndex].globalDescriptor, 0, nullptr);
-    vkCmdDispatch(commandBuffer, mSwapchainExtent.width, mSwapchainExtent.height, 1);
+    vkCmdDispatch(commandBuffer, mCtx.swapchainExtent.width, mCtx.swapchainExtent.height, 1);
 }
 
 void BdptRenderer::transferCanvasToSwapchain(const VkCommandBuffer &commandBuffer)
@@ -409,8 +410,8 @@ void BdptRenderer::transferCanvasToSwapchain(const VkCommandBuffer &commandBuffe
     region.dstOffset.y                   = 0;
     region.dstOffset.z                   = 0;
 
-    region.extent.width  = mSwapchainExtent.width;
-    region.extent.height = mSwapchainExtent.height;
+    region.extent.width  = mCtx.swapchainExtent.width;
+    region.extent.height = mCtx.swapchainExtent.height;
     region.extent.depth  = 1;
 
     vkCmdCopyImage(commandBuffer, mFrames[mCurrentFrameIndex].canvasImage.image.image,
@@ -452,7 +453,7 @@ BdptRenderer::~BdptRenderer()
 {
     H_LOG("Destroying Bdpt Renderer...");
     H_LOG("...waiting for device to be idle");
-    vkDeviceWaitIdle(mDevice);
+    vkDeviceWaitIdle(mCtx.device);
 
     mDeleter.flush();
 }

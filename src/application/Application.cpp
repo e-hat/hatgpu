@@ -267,9 +267,9 @@ void Application::Init()
     initImGui();
 
     VmaAllocatorCreateInfo allocatorInfo = {};
-    allocatorInfo.physicalDevice         = mPhysicalDevice;
-    allocatorInfo.device                 = mDevice;
-    allocatorInfo.instance               = mInstance;
+    allocatorInfo.physicalDevice         = mCtx.physicalDevice;
+    allocatorInfo.device                 = mCtx.device;
+    allocatorInfo.instance               = mCtx.instance;
 
     H_LOG("...creating VMA allocator");
     mAllocator = vk::Allocator(allocatorInfo);
@@ -318,9 +318,10 @@ void Application::initVulkan()
     createCommandBuffers();
     createTracyContexts();
     H_LOG("...creating upload context");
-    mUploadContext = vk::UploadContext(mDevice, mGraphicsQueue, mGraphicsQueueIndex);
+    mUploadContext = vk::UploadContext(mCtx.device, mGraphicsQueue, mGraphicsQueueIndex);
     mDeleter.enqueue([this]() { mUploadContext.destroy(); });
 }
+
 bool Application::checkDeviceExtensionSupport(const VkPhysicalDevice &device)
 {
     uint32_t supportedExtensionCount = 0;
@@ -337,6 +338,7 @@ bool Application::checkDeviceExtensionSupport(const VkPhysicalDevice &device)
 
     return requiredExtensions.empty();
 }
+
 void Application::initImGui()
 {
     H_LOG("Initializing Dear ImGui");
@@ -364,7 +366,7 @@ void Application::initImGui()
     poolInfo.pPoolSizes                 = poolSizes;
 
     VkDescriptorPool imguiPool;
-    H_CHECK(vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &imguiPool),
+    H_CHECK(vkCreateDescriptorPool(mCtx.device, &poolInfo, nullptr, &imguiPool),
             "Failed to create descriptor pool for Dear ImGui");
 
     // 2: initialize imgui library
@@ -378,9 +380,9 @@ void Application::initImGui()
 
     // this initializes imgui for Vulkan
     ImGui_ImplVulkan_InitInfo initInfo = {};
-    initInfo.Instance                  = mInstance;
-    initInfo.PhysicalDevice            = mPhysicalDevice;
-    initInfo.Device                    = mDevice;
+    initInfo.Instance                  = mCtx.instance;
+    initInfo.PhysicalDevice            = mCtx.physicalDevice;
+    initInfo.Device                    = mCtx.device;
     initInfo.Queue                     = mGraphicsQueue;
     initInfo.DescriptorPool            = imguiPool;
     initInfo.MinImageCount             = 3;
@@ -391,7 +393,7 @@ void Application::initImGui()
     pipelineCreateRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
     pipelineCreateRenderingInfo.pNext = nullptr;
     pipelineCreateRenderingInfo.colorAttachmentCount    = 1;
-    pipelineCreateRenderingInfo.pColorAttachmentFormats = &mSwapchainImageFormat;
+    pipelineCreateRenderingInfo.pColorAttachmentFormats = &mCtx.swapchainImageFormat;
 
     ImGui_ImplVulkan_Init(&initInfo, VK_NULL_HANDLE, pipelineCreateRenderingInfo);
 
@@ -405,7 +407,7 @@ void Application::initImGui()
     // add the destroy the imgui created structures
     mDeleter.enqueue([imguiPool, this] {
         H_LOG("...destroying Dear ImGui descriptor pool");
-        vkDestroyDescriptorPool(mDevice, imguiPool, nullptr);
+        vkDestroyDescriptorPool(mCtx.device, imguiPool, nullptr);
         ImGui_ImplVulkan_Shutdown();
     });
 }
@@ -413,7 +415,7 @@ void Application::initImGui()
 void Application::createDepthImage()
 {
     H_LOG("...creating depth image");
-    VkExtent3D depthImageExtent = {mSwapchainExtent.width, mSwapchainExtent.height, 1};
+    VkExtent3D depthImageExtent = {mCtx.swapchainExtent.width, mCtx.swapchainExtent.height, 1};
 
     VkImageCreateInfo imageInfo =
         vk::imageInfo(kDepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
@@ -430,12 +432,12 @@ void Application::createDepthImage()
 
     VkImageViewCreateInfo viewInfo =
         vk::imageViewInfo(kDepthFormat, mDepthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT);
-    H_CHECK(vkCreateImageView(mDevice, &viewInfo, nullptr, &mDepthImageView),
+    H_CHECK(vkCreateImageView(mCtx.device, &viewInfo, nullptr, &mDepthImageView),
             "Failed to create depth image view");
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying depth image");
-        vkDestroyImageView(mDevice, mDepthImageView, nullptr);
+        vkDestroyImageView(mCtx.device, mDepthImageView, nullptr);
         vmaDestroyImage(mAllocator.Impl, mDepthImage.image, mDepthImage.allocation);
     });
 }
@@ -452,7 +454,7 @@ void Application::renderImGui(VkCommandBuffer commandBuffer)
     VkRenderingInfo info{};
     info.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
     info.flags                = 0;
-    info.renderArea           = {.offset = {0, 0}, .extent = mSwapchainExtent};
+    info.renderArea           = {.offset = {0, 0}, .extent = mCtx.swapchainExtent};
     info.layerCount           = 1;
     info.colorAttachmentCount = 1;
     info.pColorAttachments    = &colorAttachment;
@@ -493,15 +495,15 @@ void Application::Run()
         ZoneScopedC(tracy::Color::Aqua);
         {
             ZoneScopedNC("vkWaitForFences", tracy::Color::Linen);
-            vkWaitForFences(mDevice, 1, &mCurrentApplicationFrame->inFlightFence, VK_TRUE,
+            vkWaitForFences(mCtx.device, 1, &mCurrentApplicationFrame->inFlightFence, VK_TRUE,
                             std::numeric_limits<uint64_t>::max());
         }
         {
             ZoneScopedNC("vkAcquireNextImageKHR", tracy::Color::Orchid);
-            VkResult nextImageResult =
-                vkAcquireNextImageKHR(mDevice, mSwapchain, std::numeric_limits<uint64_t>::max(),
-                                      mCurrentApplicationFrame->imageAvailableSemaphore,
-                                      VK_NULL_HANDLE, &mCurrentImageIndex);
+            VkResult nextImageResult = vkAcquireNextImageKHR(
+                mCtx.device, mCtx.swapchain, std::numeric_limits<uint64_t>::max(),
+                mCurrentApplicationFrame->imageAvailableSemaphore, VK_NULL_HANDLE,
+                &mCurrentImageIndex);
             if (nextImageResult == VK_ERROR_OUT_OF_DATE_KHR)
             {
                 recreateSwapchain();
@@ -511,7 +513,7 @@ void Application::Run()
                      "Failed to acquire swapchain image");
             mCurrentSwapchainImage = mSwapchainImages[mCurrentImageIndex];
         }
-        vkResetFences(mDevice, 1, &mCurrentApplicationFrame->inFlightFence);
+        vkResetFences(mCtx.device, 1, &mCurrentApplicationFrame->inFlightFence);
         vkResetCommandBuffer(mCurrentApplicationFrame->commandBuffer, 0);
 
         VkCommandBufferBeginInfo beginInfo = vk::commandBufferBeginInfo();
@@ -546,6 +548,10 @@ void Application::Run()
         ImGui::NewFrame();
 
         OnImGuiRender();
+        for (const auto &layer : mLayers)
+        {
+            layer->OnImGuiRender();
+        }
 
         {
             TracyVkZoneC(mCurrentApplicationFrame->tracyContext,
@@ -560,6 +566,11 @@ void Application::Run()
                          tracy::Color::MediumAquamarine);
 
             OnRender();
+
+            for (const auto &layer : mLayers)
+            {
+                layer->OnRender();
+            }
         }
 
         {
@@ -594,7 +605,7 @@ void Application::Run()
         VkPresentInfoKHR presentInfo             = vk::presentInfo();
         presentInfo.waitSemaphoreCount           = 1;
         presentInfo.pWaitSemaphores              = signalSemaphores.data();
-        std::array<VkSwapchainKHR, 1> swapchains = {mSwapchain};
+        std::array<VkSwapchainKHR, 1> swapchains = {mCtx.swapchain};
         presentInfo.swapchainCount               = 1;
         presentInfo.pSwapchains                  = swapchains.data();
         presentInfo.pImageIndices                = &mCurrentImageIndex;
@@ -616,7 +627,7 @@ void Application::Run()
         FrameMark;
     }
 
-    vkDeviceWaitIdle(mDevice);
+    vkDeviceWaitIdle(mCtx.device);
     Exit();
 }
 
@@ -657,11 +668,11 @@ void Application::createInstance()
     createInfo.enabledExtensionCount   = static_cast<uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
 
-    H_CHECK(vkCreateInstance(&createInfo, nullptr, &mInstance), "Failed to create VkInstance");
+    H_CHECK(vkCreateInstance(&createInfo, nullptr, &mCtx.instance), "Failed to create VkInstance");
 
     mDeleter.enqueue([this] {
         H_LOG("...destroying instance");
-        vkDestroyInstance(mInstance, nullptr);
+        vkDestroyInstance(mCtx.instance, nullptr);
     });
 
     uint32_t availableExtensionCount = 0;
@@ -680,24 +691,24 @@ void Application::setupDebugMessenger()
     VkDebugUtilsMessengerCreateInfoEXT createInfo{};
     populateDebugMessengerCreateInfo(createInfo);
 
-    H_CHECK(CreateDebugUtilsMessengerEXT(mInstance, &createInfo, nullptr, &mDebugMessenger),
+    H_CHECK(CreateDebugUtilsMessengerEXT(mCtx.instance, &createInfo, nullptr, &mCtx.debugMessenger),
             "Failed to setup debug messenger");
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying debug messenger");
-        DestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr);
+        DestroyDebugUtilsMessengerEXT(mCtx.instance, mCtx.debugMessenger, nullptr);
     });
 }
 
 void Application::createSurface()
 {
     H_LOG("...creating window surface");
-    H_CHECK(glfwCreateWindowSurface(mInstance, mWindow, nullptr, &mSurface),
+    H_CHECK(glfwCreateWindowSurface(mCtx.instance, mWindow, nullptr, &mCtx.surface),
             "Failed to create window surface");
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying window surface");
-        vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
+        vkDestroySurfaceKHR(mCtx.instance, mCtx.surface, nullptr);
     });
 }
 
@@ -767,31 +778,31 @@ void Application::pickPhysicalDevice()
 {
     H_LOG("...picking physical device");
     uint32_t candidateDeviceCount = 0;
-    vkEnumeratePhysicalDevices(mInstance, &candidateDeviceCount, nullptr);
+    vkEnumeratePhysicalDevices(mCtx.instance, &candidateDeviceCount, nullptr);
     H_ASSERT(candidateDeviceCount > 0, "Failed to find GPUs with Vulkan support");
     std::vector<VkPhysicalDevice> candidateDevices(candidateDeviceCount);
-    vkEnumeratePhysicalDevices(mInstance, &candidateDeviceCount, candidateDevices.data());
+    vkEnumeratePhysicalDevices(mCtx.instance, &candidateDeviceCount, candidateDevices.data());
 
     for (const auto &candidate : candidateDevices)
     {
-        if (isDeviceSuitable(candidate, mSurface))
+        if (isDeviceSuitable(candidate, mCtx.surface))
         {
-            mPhysicalDevice = candidate;
+            mCtx.physicalDevice = candidate;
             break;
         }
     }
 
-    H_ASSERT(mPhysicalDevice != VK_NULL_HANDLE, "Failed to find a suitable GPU");
+    H_ASSERT(mCtx.physicalDevice != VK_NULL_HANDLE, "Failed to find a suitable GPU");
 
-    vkGetPhysicalDeviceProperties(mPhysicalDevice, &mGpuProperties);
+    vkGetPhysicalDeviceProperties(mCtx.physicalDevice, &mCtx.gpuProperties);
 
-    H_LOG(std::string("...selected physical device ") + mGpuProperties.deviceName);
+    H_LOG(std::string("...selected physical device ") + mCtx.gpuProperties.deviceName);
 }
 
 void Application::createLogicalDevice()
 {
     H_LOG("...creating logical device");
-    QueueFamilyIndices indices = findQueueFamilies(mPhysicalDevice, mSurface);
+    QueueFamilyIndices indices = findQueueFamilies(mCtx.physicalDevice, mCtx.surface);
 
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos{};
     std::set<uint32_t> uniqueQueueFamilies = {*indices.graphicsFamily, *indices.presentFamily};
@@ -836,23 +847,24 @@ void Application::createLogicalDevice()
         createInfo.ppEnabledLayerNames = kValidationLayers.data();
     }
 
-    H_CHECK(vkCreateDevice(mPhysicalDevice, &createInfo, nullptr, &mDevice),
+    H_CHECK(vkCreateDevice(mCtx.physicalDevice, &createInfo, nullptr, &mCtx.device),
             "Unable to create logical device");
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying logical device");
-        vkDestroyDevice(mDevice, nullptr);
+        vkDestroyDevice(mCtx.device, nullptr);
     });
 
-    vkGetDeviceQueue(mDevice, *indices.graphicsFamily, 0, &mGraphicsQueue);
+    vkGetDeviceQueue(mCtx.device, *indices.graphicsFamily, 0, &mGraphicsQueue);
     mGraphicsQueueIndex = *indices.graphicsFamily;
-    vkGetDeviceQueue(mDevice, *indices.presentFamily, 0, &mPresentQueue);
+    vkGetDeviceQueue(mCtx.device, *indices.presentFamily, 0, &mPresentQueue);
 }
 
 void Application::createSwapchain()
 {
     H_LOG("...creating swapchain");
-    SwapchainSupportDetails swapchainSupport = querySwapchainSupport(mPhysicalDevice, mSurface);
+    SwapchainSupportDetails swapchainSupport =
+        querySwapchainSupport(mCtx.physicalDevice, mCtx.surface);
 
     const VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapchainSupport.formats);
     const VkPresentModeKHR presentMode     = chooseSwapPresentMode(swapchainSupport.presentModes);
@@ -866,7 +878,7 @@ void Application::createSwapchain()
 
     VkSwapchainCreateInfoKHR createInfo{};
     createInfo.sType            = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    createInfo.surface          = mSurface;
+    createInfo.surface          = mCtx.surface;
     createInfo.minImageCount    = imageCount;
     createInfo.imageFormat      = surfaceFormat.format;
     createInfo.imageColorSpace  = surfaceFormat.colorSpace;
@@ -874,7 +886,7 @@ void Application::createSwapchain()
     createInfo.imageArrayLayers = 1;
     createInfo.imageUsage       = swapchainImageUsage();
 
-    const QueueFamilyIndices indices           = findQueueFamilies(mPhysicalDevice, mSurface);
+    const QueueFamilyIndices indices = findQueueFamilies(mCtx.physicalDevice, mCtx.surface);
     std::array<uint32_t, 2> queueFamilyIndices = {indices.graphicsFamily.value(),
                                                   indices.presentFamily.value()};
 
@@ -895,15 +907,15 @@ void Application::createSwapchain()
     createInfo.clipped        = VK_TRUE;
     createInfo.oldSwapchain   = VK_NULL_HANDLE;
 
-    H_CHECK(vkCreateSwapchainKHR(mDevice, &createInfo, nullptr, &mSwapchain),
+    H_CHECK(vkCreateSwapchainKHR(mCtx.device, &createInfo, nullptr, &mCtx.swapchain),
             "Failed to create swapchain");
 
-    vkGetSwapchainImagesKHR(mDevice, mSwapchain, &imageCount, nullptr);
+    vkGetSwapchainImagesKHR(mCtx.device, mCtx.swapchain, &imageCount, nullptr);
     mSwapchainImages.resize(imageCount);
-    vkGetSwapchainImagesKHR(mDevice, mSwapchain, &imageCount, mSwapchainImages.data());
+    vkGetSwapchainImagesKHR(mCtx.device, mCtx.swapchain, &imageCount, mSwapchainImages.data());
 
-    mSwapchainImageFormat = surfaceFormat.format;
-    mSwapchainExtent      = extent;
+    mCtx.swapchainImageFormat = surfaceFormat.format;
+    mCtx.swapchainExtent      = extent;
 }
 
 void Application::createSwapchainImageViews()
@@ -914,12 +926,12 @@ void Application::createSwapchainImageViews()
     for (size_t i = 0; i < mSwapchainImages.size(); ++i)
     {
         VkImageViewCreateInfo createInfo = vk::imageViewInfo(
-            mSwapchainImageFormat, mSwapchainImages[i], VK_IMAGE_ASPECT_COLOR_BIT);
+            mCtx.swapchainImageFormat, mSwapchainImages[i], VK_IMAGE_ASPECT_COLOR_BIT);
         createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        H_CHECK(vkCreateImageView(mDevice, &createInfo, nullptr, &mSwapchainImageViews[i]),
+        H_CHECK(vkCreateImageView(mCtx.device, &createInfo, nullptr, &mSwapchainImageViews[i]),
                 "Failed to create swapchain image view");
     }
 }
@@ -927,16 +939,16 @@ void Application::createSwapchainImageViews()
 void Application::createCommandPool()
 {
     H_LOG("...creating command pool");
-    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(mPhysicalDevice, mSurface);
+    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(mCtx.physicalDevice, mCtx.surface);
 
     VkCommandPoolCreateInfo poolInfo = vk::commandPoolInfo(
         *queueFamilyIndices.graphicsFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-    H_CHECK(vkCreateCommandPool(mDevice, &poolInfo, nullptr, &mCommandPool),
+    H_CHECK(vkCreateCommandPool(mCtx.device, &poolInfo, nullptr, &mCommandPool),
             "Failed to create command pool");
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying command pool");
-        vkDestroyCommandPool(mDevice, mCommandPool, nullptr);
+        vkDestroyCommandPool(mCtx.device, mCommandPool, nullptr);
     });
 }
 
@@ -947,7 +959,7 @@ void Application::createCommandBuffers()
 
     VkCommandBufferAllocateInfo allocInfo =
         vk::commandBufferAllocInfo(mCommandPool, static_cast<uint32_t>(commandBuffers.size()));
-    H_CHECK(vkAllocateCommandBuffers(mDevice, &allocInfo, commandBuffers.data()),
+    H_CHECK(vkAllocateCommandBuffers(mCtx.device, &allocInfo, commandBuffers.data()),
             "Failed to allocate command buffer");
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
@@ -961,8 +973,8 @@ void Application::createTracyContexts()
     H_LOG("...creating Tracy contexts");
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
-        mFrames[i].tracyContext =
-            TracyVkContext(mPhysicalDevice, mDevice, mGraphicsQueue, mFrames[i].commandBuffer);
+        mFrames[i].tracyContext = TracyVkContext(mCtx.physicalDevice, mCtx.device, mGraphicsQueue,
+                                                 mFrames[i].commandBuffer);
     }
 
     mDeleter.enqueue([this]() {
@@ -982,13 +994,13 @@ void Application::createSyncObjects()
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
-        H_CHECK(vkCreateSemaphore(mDevice, &semaphoreCreateInfo, nullptr,
+        H_CHECK(vkCreateSemaphore(mCtx.device, &semaphoreCreateInfo, nullptr,
                                   &mFrames[i].imageAvailableSemaphore),
                 "Failed to create sync object");
-        H_CHECK(vkCreateSemaphore(mDevice, &semaphoreCreateInfo, nullptr,
+        H_CHECK(vkCreateSemaphore(mCtx.device, &semaphoreCreateInfo, nullptr,
                                   &mFrames[i].renderFinishedSemaphore),
                 "Failed to create sync object");
-        H_CHECK(vkCreateFence(mDevice, &fenceCreateInfo, nullptr, &mFrames[i].inFlightFence),
+        H_CHECK(vkCreateFence(mCtx.device, &fenceCreateInfo, nullptr, &mFrames[i].inFlightFence),
                 "Failed to create sync object");
     }
 
@@ -996,9 +1008,9 @@ void Application::createSyncObjects()
         H_LOG("...destroying frame sync objects");
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
-            vkDestroySemaphore(mDevice, mFrames[i].imageAvailableSemaphore, nullptr);
-            vkDestroySemaphore(mDevice, mFrames[i].renderFinishedSemaphore, nullptr);
-            vkDestroyFence(mDevice, mFrames[i].inFlightFence, nullptr);
+            vkDestroySemaphore(mCtx.device, mFrames[i].imageAvailableSemaphore, nullptr);
+            vkDestroySemaphore(mCtx.device, mFrames[i].renderFinishedSemaphore, nullptr);
+            vkDestroyFence(mCtx.device, mFrames[i].inFlightFence, nullptr);
         }
     });
 }
@@ -1008,15 +1020,15 @@ void Application::cleanupSwapchain()
     H_LOG("...destroying swapchain");
     for (const auto framebuffer : mSwapchainFramebuffers)
     {
-        vkDestroyFramebuffer(mDevice, framebuffer, nullptr);
+        vkDestroyFramebuffer(mCtx.device, framebuffer, nullptr);
     }
 
     for (const auto imageView : mSwapchainImageViews)
     {
-        vkDestroyImageView(mDevice, imageView, nullptr);
+        vkDestroyImageView(mCtx.device, imageView, nullptr);
     }
 
-    vkDestroySwapchainKHR(mDevice, mSwapchain, nullptr);
+    vkDestroySwapchainKHR(mCtx.device, mCtx.swapchain, nullptr);
 }
 
 void Application::recreateSwapchain()
@@ -1028,7 +1040,7 @@ void Application::recreateSwapchain()
         glfwGetFramebufferSize(mWindow, &width, &height);
         glfwWaitEvents();
     }
-    vkDeviceWaitIdle(mDevice);
+    vkDeviceWaitIdle(mCtx.device);
 
     cleanupSwapchain();
 
@@ -1040,7 +1052,7 @@ Application::~Application()
 {
     H_LOG("Destroying Application...");
     H_LOG("...waiting for device to be idle");
-    vkDeviceWaitIdle(mDevice);
+    vkDeviceWaitIdle(mCtx.device);
 
     mDeleter.flush();
 }
