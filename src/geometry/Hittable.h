@@ -10,7 +10,11 @@ class Hittable
 {
   public:
     // TODO: remove this dummy impl
-    virtual Aabb BoundingBox() const { return {glm::vec4(0), glm::vec4(0)}; }
+    // Takes a model matrix as parameter
+    virtual Aabb BoundingBox([[maybe_unused]] const glm::mat4 &worldTransform) const
+    {
+        return {glm::vec4(0), glm::vec4(0)};
+    }
 };
 };  // namespace hatgpu
 

@@ -109,4 +109,23 @@ void Mesh::destroyBuffers(vk::Allocator &allocator)
     allocator.destroyBuffer(vertexBuffer);
     allocator.destroyBuffer(indexBuffer);
 }
+
+Aabb Mesh::BoundingBox(const glm::mat4 &worldTransform) const
+{
+    if (vertices.empty())
+    {
+        return Aabb{glm::vec4(0.f), glm::vec4(0.f)};
+    }
+
+    Aabb result{worldTransform * glm::vec4(vertices.front().position, 1.0f),
+                worldTransform * glm::vec4(vertices.front().position, 1.0f)};
+    for (const auto &vertex : vertices)
+    {
+        const glm::vec4 worldPos = worldTransform * glm::vec4(vertex.position, 1.0f);
+        result.min               = glm::min(result.min, worldPos);
+        result.max               = glm::max(result.max, worldPos);
+    }
+
+    return result;
+}
 }  // namespace hatgpu

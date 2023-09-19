@@ -75,7 +75,7 @@ struct Mesh : public Hittable
     void upload(vk::Allocator &allocator, vk::UploadContext &context);
     void destroyBuffers(vk::Allocator &allocator);
 
-    // virtual Aabb BoundingBox() const override;
+    Aabb BoundingBox(const glm::mat4 &worldTransform) const override;
 };
 }  // namespace hatgpu
 

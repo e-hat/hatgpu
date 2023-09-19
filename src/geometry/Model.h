@@ -22,7 +22,7 @@ class Model : public Hittable
     void loadFromObj(const std::string &filename, TextureManager &manager);
     std::vector<Mesh> meshes;
 
-    // virtual Aabb BoundingBox() const override;
+    // Aabb BoundingBox(const glm::mat4 &worldTransform) const override;
 
   private:
     void processNode(aiNode *node, const aiScene *scene, TextureManager &textureManager);

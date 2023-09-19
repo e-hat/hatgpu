@@ -42,7 +42,13 @@ set(SOURCES ${SOURCES}
         ${SOURCE_DIR}/vk/upload_context.cpp
         ${SOURCE_DIR}/vk/deleter.h
         ${SOURCE_DIR}/texture/Texture.h
-        ${SOURCE_DIR}/texture/Texture.cpp)
+        ${SOURCE_DIR}/texture/Texture.cpp
+        ${SOURCE_DIR}/geometry/prim/Sphere.h
+        ${SOURCE_DIR}/geometry/prim/Sphere.cpp
+        ${SOURCE_DIR}/geometry/prim/Quad.cpp
+        ${SOURCE_DIR}/geometry/prim/Quad.h
+        ${SOURCE_DIR}/geometry/prim/Box.h
+        ${SOURCE_DIR}/geometry/prim/Box.cpp)
 add_executable(hatgpu ${SOURCES})
 
 set(INCLUDES ${SOURCE_DIR})
