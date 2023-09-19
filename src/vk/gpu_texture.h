@@ -16,7 +16,7 @@ struct GpuTexture
     VkImageView imageView;
     uint32_t mipLevels;
 
-    void destroy(Allocator &allocator) { allocator.destroyImage(image); }
+    inline void destroy(Allocator &allocator) { allocator.destroyImage(image); }
 };
 }  // namespace vk
 }  // namespace hatgpu
