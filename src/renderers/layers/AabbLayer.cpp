@@ -11,7 +11,7 @@ namespace hatgpu
 {
 namespace
 {
-constexpr const char *kVertexShaderName = "../shaders/bin/aabb/aabb.vert.spv";
+constexpr const char *kVertexShaderName = "../shaders/bin/layers/aabb.vert.spv";
 
 struct PushConstants
 {

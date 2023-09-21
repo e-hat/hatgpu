@@ -4,6 +4,8 @@ compile_shader() {
 
 mkdir -p 'shaders/bin/bdpt'
 mkdir -p 'shaders/bin/forward'
+mkdir -p 'shaders/bin/layers'
 compile_shader 'forward/shader.vert'
 compile_shader 'forward/shader.frag'
 compile_shader 'bdpt/main.comp'
+compile_shader 'layers/aabb.vert'
