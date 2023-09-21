@@ -261,12 +261,7 @@ void ForwardRenderer::createGraphicsPipeline()
     scissor.offset = {0, 0};
     scissor.extent = mCtx.swapchainExtent;
 
-    VkPipelineViewportStateCreateInfo viewportState{};
-    viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.pViewports    = &viewport;
-    viewportState.scissorCount  = 1;
-    viewportState.pScissors     = &scissor;
+    auto viewportState = vk::viewportStateInfo(&viewport, &scissor);
 
     VkPipelineRasterizationStateCreateInfo rasterizer = vk::rasterizationInfo(VK_POLYGON_MODE_FILL);
     rasterizer.cullMode                               = VK_CULL_MODE_BACK_BIT;

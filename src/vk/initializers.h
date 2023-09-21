@@ -75,6 +75,9 @@ VkWriteDescriptorSet writeDescriptorImage(VkDescriptorType type,
 VkSamplerCreateInfo samplerInfo(
     VkFilter filters,
     VkSamplerAddressMode samplerAdressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
+
+VkPipelineViewportStateCreateInfo viewportStateInfo(VkViewport *const viewport,
+                                                    VkRect2D *const scissor);
 }  // namespace vk
 }  // namespace hatgpu
 

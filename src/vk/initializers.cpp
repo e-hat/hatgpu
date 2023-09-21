@@ -1,3 +1,4 @@
+#include <bits/ranges_base.h>
 #include "hatpch.h"
 
 #include "initializers.h"
@@ -355,6 +356,18 @@ VkSamplerCreateInfo samplerInfo(
     info.addressModeW = samplerAdressMode;
 
     return info;
+}
+
+VkPipelineViewportStateCreateInfo viewportStateInfo(VkViewport *const viewport,
+                                                    VkRect2D *const scissor)
+{
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.viewportCount = 1;
+    viewportState.pViewports    = viewport;
+    viewportState.scissorCount  = 1;
+    viewportState.pScissors     = scissor;
+
+    return viewportState;
 }
 }  // namespace vk
 }  // namespace hatgpu
