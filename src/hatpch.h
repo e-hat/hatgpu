@@ -11,8 +11,16 @@
 #    define SPDLOG_ACTIVE_LEVEL SPD_LEVEL_DEBUG
 #endif
 #include <spdlog/spdlog.h>
-#include <memory>
 #define LOGGER ::hatgpu::Logger::GetOrCreateInstance()
+
+#include <algorithm>
+#include <array>
+#include <format>
+#include <memory>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 #ifdef DEBUG
 #    if defined(_WIN32)
