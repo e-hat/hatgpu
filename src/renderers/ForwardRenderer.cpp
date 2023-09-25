@@ -73,7 +73,7 @@ void ForwardRenderer::Exit() {}
 
 void ForwardRenderer::OnRender()
 {
-    recordCommandBuffer(mCurrentApplicationFrame->commandBuffer, mCurrentFrameIndex);
+    recordCommandBuffer();
     ++mFrameCount;
 }
 void ForwardRenderer::OnImGuiRender()
@@ -444,10 +444,9 @@ void ForwardRenderer::uploadSceneToGpu()
     });
 }
 
-void ForwardRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
+void ForwardRenderer::drawObjects()
 {
-    TracyVkZoneC(mCurrentApplicationFrame->tracyContext, commandBuffer, "drawObjects",
-                 tracy::Color::Blue);
+    VkZoneC("drawObjects", tracy::Color::Blue);
     const glm::mat4 view     = mCamera.GetViewMatrix();
     const glm::mat4 proj     = mCamera.GetProjectionMatrix();
     const glm::mat4 viewproj = proj * view;
@@ -460,8 +459,7 @@ void ForwardRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
 
     {
         ZoneScopedNC("Scene buffer writes", tracy::Color::DeepSkyBlue4);
-        TracyVkZoneC(mCurrentApplicationFrame->tracyContext, commandBuffer, "Scene buffer writes",
-                     tracy::Color::Olive);
+        VkZoneC("Scene buffer writes", tracy::Color::Olive);
         // Writing camera data
         void *data = mAllocator.map(mFrames[mCurrentFrameIndex].cameraBuffer);
         std::memcpy(data, &cameraData, sizeof(GpuCameraData));
@@ -495,8 +493,7 @@ void ForwardRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
     }
 
     {
-        TracyVkZoneC(mCurrentApplicationFrame->tracyContext, commandBuffer, "Renderpass Begin",
-                     tracy::Color::LavenderBlush);
+        VkZoneC("Renderpass Begin", tracy::Color::LavenderBlush);
 
         VkRenderingAttachmentInfo colorAttachment{};
         colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -525,13 +522,14 @@ void ForwardRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
         renderInfo.pColorAttachments    = &colorAttachment;
         renderInfo.pDepthAttachment     = &depthAttachment;
 
-        vkCmdBeginRendering(commandBuffer, &renderInfo);
+        vkCmdBeginRendering(mCurrentDrawCtx->commandBuffer, &renderInfo);
 
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mGraphicsPipeline);
+        vkCmdBindPipeline(mCurrentDrawCtx->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          mGraphicsPipeline);
 
         std::array<VkDescriptorSet, 1> descriptorSets = {
             mFrames[mCurrentFrameIndex].globalDescriptor};
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        vkCmdBindDescriptorSets(mCurrentDrawCtx->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 mGraphicsPipelineLayout, 0, descriptorSets.size(),
                                 descriptorSets.data(), 0, nullptr);
 
@@ -542,12 +540,12 @@ void ForwardRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
         viewport.height   = static_cast<float>(mCtx.swapchainExtent.height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
-        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+        vkCmdSetViewport(mCurrentDrawCtx->commandBuffer, 0, 1, &viewport);
 
         VkRect2D scissor{};
         scissor.offset = {0, 0};
         scissor.extent = mCtx.swapchainExtent;
-        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+        vkCmdSetScissor(mCurrentDrawCtx->commandBuffer, 0, 1, &scissor);
     }
 
     for (const auto &object : mScene.renderables)
@@ -557,32 +555,33 @@ void ForwardRenderer::drawObjects(const VkCommandBuffer &commandBuffer)
         for (auto &mesh : object.model->meshes)
         {
             ZoneScopedC(tracy::Color::DodgerBlue);
-            TracyVkZoneC(mCurrentApplicationFrame->tracyContext,
-                         mCurrentApplicationFrame->commandBuffer, "Mesh Draw", tracy::Color::Red);
+            VkZoneC("Mesh Draw", tracy::Color::Red);
             if (!mesh.textures.contains(TextureType::ALBEDO) ||
                 !mesh.textures.contains(TextureType::METALLIC_ROUGHNESS))
                 continue;
 
             VkDeviceSize offset = 0;
-            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer.buffer, &offset);
-            vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindVertexBuffers(mCurrentDrawCtx->commandBuffer, 0, 1, &mesh.vertexBuffer.buffer,
+                                   &offset);
+            vkCmdBindIndexBuffer(mCurrentDrawCtx->commandBuffer, mesh.indexBuffer.buffer, 0,
+                                 VK_INDEX_TYPE_UINT32);
 
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            vkCmdBindDescriptorSets(mCurrentDrawCtx->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     mGraphicsPipelineLayout, 1, 1, &mesh.descriptor, 0, nullptr);
 
-            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
+            vkCmdDrawIndexed(mCurrentDrawCtx->commandBuffer,
+                             static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
         }
     }
 
-    vkCmdEndRendering(commandBuffer);
+    vkCmdEndRendering(mCurrentDrawCtx->commandBuffer);
 }
 
-void ForwardRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer,
-                                          [[maybe_unused]] uint32_t imageIndex)
+void ForwardRenderer::recordCommandBuffer()
 {
     ZoneScopedC(tracy::Color::PeachPuff);
 
-    drawObjects(commandBuffer);
+    drawObjects();
 }
 
 ForwardRenderer::~ForwardRenderer()

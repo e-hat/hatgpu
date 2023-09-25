@@ -1,6 +1,7 @@
 #ifndef _INCLUDE_APPLICATION_H
 #define _INCLUDE_APPLICATION_H
 #include <vulkan/vulkan_core.h>
+#include "application/DrawCtx.h"
 #include "hatpch.h"
 
 #include "Layer.h"
@@ -107,17 +108,9 @@ class Application
                                                 const VkSurfaceKHR &surface);
 
     VkCommandPool mCommandPool;
-    struct FrameData
-    {
-        VkCommandBuffer commandBuffer;
-        VkSemaphore imageAvailableSemaphore;
-        VkSemaphore renderFinishedSemaphore;
-        VkFence inFlightFence;
-        TracyVkCtx tracyContext;
-    };
-    std::array<FrameData, kMaxFramesInFlight> mFrames{};
+    std::array<DrawCtx, kMaxFramesInFlight> mDrawCtxs{};
     uint32_t mCurrentFrameIndex{0};
-    FrameData *mCurrentApplicationFrame = &mFrames.front();
+    DrawCtx *mCurrentDrawCtx = &mDrawCtxs.front();
 
     VkQueue mGraphicsQueue;
     uint32_t mGraphicsQueueIndex;

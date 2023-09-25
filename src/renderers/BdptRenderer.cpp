@@ -341,7 +341,7 @@ void BdptRenderer::Exit() {}
 
 void BdptRenderer::OnRender()
 {
-    recordCommandBuffer(mCurrentApplicationFrame->commandBuffer, mCurrentFrameIndex);
+    recordCommandBuffer();
     ++mFrameCount;
 }
 void BdptRenderer::OnImGuiRender()
@@ -351,17 +351,20 @@ void BdptRenderer::OnImGuiRender()
     ImGui::Text("Look around with arrow keys. Zoom in/out with mouse wheel");
 }
 
-void BdptRenderer::draw(const VkCommandBuffer &commandBuffer)
+void BdptRenderer::draw()
 {
-    TracyVkZoneC(mCurrentApplicationFrame->tracyContext, commandBuffer, "draw", tracy::Color::Blue);
+    VkZoneC("draw", tracy::Color::Blue);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, mBdptPipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, mBdptPipelineLayout, 0,
-                            1, &mFrames[mCurrentFrameIndex].globalDescriptor, 0, nullptr);
-    vkCmdDispatch(commandBuffer, mCtx.swapchainExtent.width, mCtx.swapchainExtent.height, 1);
+    vkCmdBindPipeline(mCurrentDrawCtx->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                      mBdptPipeline);
+    vkCmdBindDescriptorSets(mCurrentDrawCtx->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                            mBdptPipelineLayout, 0, 1,
+                            &mFrames[mCurrentFrameIndex].globalDescriptor, 0, nullptr);
+    vkCmdDispatch(mCurrentDrawCtx->commandBuffer, mCtx.swapchainExtent.width,
+                  mCtx.swapchainExtent.height, 1);
 }
 
-void BdptRenderer::transferCanvasToSwapchain(const VkCommandBuffer &commandBuffer)
+void BdptRenderer::transferCanvasToSwapchain()
 {
     VkImageMemoryBarrier barrier;
     barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -381,7 +384,7 @@ void BdptRenderer::transferCanvasToSwapchain(const VkCommandBuffer &commandBuffe
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+    vkCmdPipelineBarrier(mCurrentDrawCtx->commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
     barrier.oldLayout     = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -390,7 +393,8 @@ void BdptRenderer::transferCanvasToSwapchain(const VkCommandBuffer &commandBuffe
     barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    vkCmdPipelineBarrier(mCurrentDrawCtx->commandBuffer,
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
     VkImageCopy region;
@@ -414,7 +418,8 @@ void BdptRenderer::transferCanvasToSwapchain(const VkCommandBuffer &commandBuffe
     region.extent.height = mCtx.swapchainExtent.height;
     region.extent.depth  = 1;
 
-    vkCmdCopyImage(commandBuffer, mFrames[mCurrentFrameIndex].canvasImage.image.image,
+    vkCmdCopyImage(mCurrentDrawCtx->commandBuffer,
+                   mFrames[mCurrentFrameIndex].canvasImage.image.image,
                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, mCurrentSwapchainImage,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
@@ -424,7 +429,7 @@ void BdptRenderer::transferCanvasToSwapchain(const VkCommandBuffer &commandBuffe
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+    vkCmdPipelineBarrier(mCurrentDrawCtx->commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr,
                          1, &barrier);
 
@@ -434,19 +439,17 @@ void BdptRenderer::transferCanvasToSwapchain(const VkCommandBuffer &commandBuffe
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+    vkCmdPipelineBarrier(mCurrentDrawCtx->commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
                          &barrier);
 }
 
-void BdptRenderer::recordCommandBuffer(const VkCommandBuffer &commandBuffer,
-                                       [[maybe_unused]] uint32_t imageIndex)
+void BdptRenderer::recordCommandBuffer()
 {
     ZoneScopedC(tracy::Color::PeachPuff);
 
-    draw(commandBuffer);
-
-    transferCanvasToSwapchain(commandBuffer);
+    draw();
+    transferCanvasToSwapchain();
 }
 
 BdptRenderer::~BdptRenderer()

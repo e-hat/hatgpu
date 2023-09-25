@@ -495,15 +495,14 @@ void Application::Run()
         ZoneScopedC(tracy::Color::Aqua);
         {
             ZoneScopedNC("vkWaitForFences", tracy::Color::Linen);
-            vkWaitForFences(mCtx.device, 1, &mCurrentApplicationFrame->inFlightFence, VK_TRUE,
+            vkWaitForFences(mCtx.device, 1, &mCurrentDrawCtx->inFlightFence, VK_TRUE,
                             std::numeric_limits<uint64_t>::max());
         }
         {
             ZoneScopedNC("vkAcquireNextImageKHR", tracy::Color::Orchid);
             VkResult nextImageResult = vkAcquireNextImageKHR(
                 mCtx.device, mCtx.swapchain, std::numeric_limits<uint64_t>::max(),
-                mCurrentApplicationFrame->imageAvailableSemaphore, VK_NULL_HANDLE,
-                &mCurrentImageIndex);
+                mCurrentDrawCtx->imageAvailableSemaphore, VK_NULL_HANDLE, &mCurrentImageIndex);
             if (nextImageResult == VK_ERROR_OUT_OF_DATE_KHR)
             {
                 recreateSwapchain();
@@ -513,11 +512,11 @@ void Application::Run()
                      "Failed to acquire swapchain image");
             mCurrentSwapchainImage = mSwapchainImages[mCurrentImageIndex];
         }
-        vkResetFences(mCtx.device, 1, &mCurrentApplicationFrame->inFlightFence);
-        vkResetCommandBuffer(mCurrentApplicationFrame->commandBuffer, 0);
+        vkResetFences(mCtx.device, 1, &mCurrentDrawCtx->inFlightFence);
+        vkResetCommandBuffer(mCurrentDrawCtx->commandBuffer, 0);
 
         VkCommandBufferBeginInfo beginInfo = vk::commandBufferBeginInfo();
-        H_CHECK(vkBeginCommandBuffer(mCurrentApplicationFrame->commandBuffer, &beginInfo),
+        H_CHECK(vkBeginCommandBuffer(mCurrentDrawCtx->commandBuffer, &beginInfo),
                 "Failed to begin recording command buffer");
 
         VkImageMemoryBarrier barrier;
@@ -539,7 +538,7 @@ void Application::Run()
         barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
 
         vkCmdPipelineBarrier(
-            mCurrentApplicationFrame->commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            mCurrentDrawCtx->commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
         ImGui_ImplVulkan_NewFrame();
@@ -554,16 +553,12 @@ void Application::Run()
         }
 
         {
-            TracyVkZoneC(mCurrentApplicationFrame->tracyContext,
-                         mCurrentApplicationFrame->commandBuffer, "ImGui::Render",
-                         tracy::Color::Blue);
+            VkZoneC("ImGui::Render", tracy::Color::Blue);
             ImGui::Render();
         }
 
         {
-            TracyVkZoneC(mCurrentApplicationFrame->tracyContext,
-                         mCurrentApplicationFrame->commandBuffer, "OnRender",
-                         tracy::Color::MediumAquamarine);
+            VkZoneC("OnRender", tracy::Color::MediumAquamarine);
 
             OnRender();
 
@@ -574,33 +569,27 @@ void Application::Run()
         }
 
         {
-            TracyVkZoneC(mCurrentApplicationFrame->tracyContext,
-                         mCurrentApplicationFrame->commandBuffer, "ImGui RenderDrawData",
-                         tracy::Color::Blue);
-            renderImGui(mCurrentApplicationFrame->commandBuffer);
+            VkZoneC("ImGui RenderDrawData", tracy::Color::Blue);
+            renderImGui(mCurrentDrawCtx->commandBuffer);
         }
 
-        TracyVkCollect(mCurrentApplicationFrame->tracyContext,
-                       mCurrentApplicationFrame->commandBuffer);
-        H_CHECK(vkEndCommandBuffer(mCurrentApplicationFrame->commandBuffer),
+        TracyVkCollect(mCurrentDrawCtx->tracyCtx, mCurrentDrawCtx->commandBuffer);
+        H_CHECK(vkEndCommandBuffer(mCurrentDrawCtx->commandBuffer),
                 "Failed to end recording of command buffer");
 
-        VkSubmitInfo submitInfo = vk::submitInfo(&mCurrentApplicationFrame->commandBuffer);
-        std::array<VkSemaphore, 1> waitSemaphores = {
-            mCurrentApplicationFrame->imageAvailableSemaphore};
+        VkSubmitInfo submitInfo                   = vk::submitInfo(&mCurrentDrawCtx->commandBuffer);
+        std::array<VkSemaphore, 1> waitSemaphores = {mCurrentDrawCtx->imageAvailableSemaphore};
         std::array<VkPipelineStageFlags, 1> waitStages = {
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT};
         submitInfo.waitSemaphoreCount               = waitSemaphores.size();
         submitInfo.pWaitSemaphores                  = waitSemaphores.data();
         submitInfo.pWaitDstStageMask                = waitStages.data();
-        std::array<VkSemaphore, 1> signalSemaphores = {
-            mCurrentApplicationFrame->renderFinishedSemaphore};
-        submitInfo.signalSemaphoreCount = signalSemaphores.size();
-        submitInfo.pSignalSemaphores    = signalSemaphores.data();
+        std::array<VkSemaphore, 1> signalSemaphores = {mCurrentDrawCtx->renderFinishedSemaphore};
+        submitInfo.signalSemaphoreCount             = signalSemaphores.size();
+        submitInfo.pSignalSemaphores                = signalSemaphores.data();
 
-        H_CHECK(
-            vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mCurrentApplicationFrame->inFlightFence),
-            "Failed to submit draw command buffer");
+        H_CHECK(vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, mCurrentDrawCtx->inFlightFence),
+                "Failed to submit draw command buffer");
 
         VkPresentInfoKHR presentInfo             = vk::presentInfo();
         presentInfo.waitSemaphoreCount           = 1;
@@ -620,8 +609,8 @@ void Application::Run()
         }
         H_ASSERT(presentResult == VK_SUCCESS, "Failed to present swapchain image");
 
-        mCurrentFrameIndex       = (1 + mCurrentFrameIndex) % kMaxFramesInFlight;
-        mCurrentApplicationFrame = &mFrames[mCurrentFrameIndex];
+        mCurrentFrameIndex = (1 + mCurrentFrameIndex) % kMaxFramesInFlight;
+        mCurrentDrawCtx    = &mDrawCtxs[mCurrentFrameIndex];
 
         glfwSwapBuffers(mWindow);
         FrameMark;
@@ -964,7 +953,7 @@ void Application::createCommandBuffers()
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
-        mFrames[i].commandBuffer = commandBuffers[i];
+        mDrawCtxs[i].commandBuffer = commandBuffers[i];
     }
 }
 
@@ -973,15 +962,15 @@ void Application::createTracyContexts()
     H_LOG("...creating Tracy contexts");
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
-        mFrames[i].tracyContext = TracyVkContext(mCtx.physicalDevice, mCtx.device, mGraphicsQueue,
-                                                 mFrames[i].commandBuffer);
+        mDrawCtxs[i].tracyCtx = TracyVkContext(mCtx.physicalDevice, mCtx.device, mGraphicsQueue,
+                                               mDrawCtxs[i].commandBuffer);
     }
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying Tracy contexts");
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
-            TracyVkDestroy(mFrames[i].tracyContext);
+            TracyVkDestroy(mDrawCtxs[i].tracyCtx);
         }
     });
 }
@@ -995,12 +984,12 @@ void Application::createSyncObjects()
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
         H_CHECK(vkCreateSemaphore(mCtx.device, &semaphoreCreateInfo, nullptr,
-                                  &mFrames[i].imageAvailableSemaphore),
+                                  &mDrawCtxs[i].imageAvailableSemaphore),
                 "Failed to create sync object");
         H_CHECK(vkCreateSemaphore(mCtx.device, &semaphoreCreateInfo, nullptr,
-                                  &mFrames[i].renderFinishedSemaphore),
+                                  &mDrawCtxs[i].renderFinishedSemaphore),
                 "Failed to create sync object");
-        H_CHECK(vkCreateFence(mCtx.device, &fenceCreateInfo, nullptr, &mFrames[i].inFlightFence),
+        H_CHECK(vkCreateFence(mCtx.device, &fenceCreateInfo, nullptr, &mDrawCtxs[i].inFlightFence),
                 "Failed to create sync object");
     }
 
@@ -1008,9 +997,9 @@ void Application::createSyncObjects()
         H_LOG("...destroying frame sync objects");
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
-            vkDestroySemaphore(mCtx.device, mFrames[i].imageAvailableSemaphore, nullptr);
-            vkDestroySemaphore(mCtx.device, mFrames[i].renderFinishedSemaphore, nullptr);
-            vkDestroyFence(mCtx.device, mFrames[i].inFlightFence, nullptr);
+            vkDestroySemaphore(mCtx.device, mDrawCtxs[i].imageAvailableSemaphore, nullptr);
+            vkDestroySemaphore(mCtx.device, mDrawCtxs[i].renderFinishedSemaphore, nullptr);
+            vkDestroyFence(mCtx.device, mDrawCtxs[i].inFlightFence, nullptr);
         }
     });
 }

@@ -58,8 +58,8 @@ class BdptRenderer : public Application
     }
 
   private:
-    void draw(const VkCommandBuffer &commandBuffer);
-    void recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex);
+    void draw();
+    void recordCommandBuffer();
 
     void createDescriptorPool();
     void createDescriptorLayout();
@@ -74,7 +74,7 @@ class BdptRenderer : public Application
 
     vk::Allocator mAllocator;
 
-    void transferCanvasToSwapchain(const VkCommandBuffer &commandBuffer);
+    void transferCanvasToSwapchain();
 
     VkDescriptorPool mDescriptorPool;
     struct FrameData

@@ -16,6 +16,7 @@ set(SOURCES ${SOURCES}
         ${SOURCE_DIR}/hatpch.cpp
         ${SOURCE_DIR}/application/Application.h
         ${SOURCE_DIR}/application/Application.cpp
+        ${SOURCE_DIR}/application/DrawCtx.h
         ${SOURCE_DIR}/application/InputManager.h
         ${SOURCE_DIR}/application/InputManager.cpp
         ${SOURCE_DIR}/renderers/ForwardRenderer.h

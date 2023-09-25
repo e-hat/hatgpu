@@ -48,8 +48,8 @@ class ForwardRenderer : public Application
     void loadSceneFromDisk();
     void uploadSceneToGpu();
 
-    void drawObjects(const VkCommandBuffer &commandBuffer);
-    void recordCommandBuffer(const VkCommandBuffer &commandBuffer, uint32_t imageIndex);
+    void drawObjects();
+    void recordCommandBuffer();
 
     void uploadTextures(Mesh &mesh);
 
