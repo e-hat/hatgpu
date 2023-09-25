@@ -78,7 +78,7 @@ void BdptRenderer::Init()
     H_LOG("...creating VMA allocator");
     mAllocator = vk::Allocator(allocatorInfo);
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying VMA allocator");
         mAllocator.destroy();
     });
@@ -149,7 +149,7 @@ void BdptRenderer::createCanvas()
             "failed to create canvas image view");
     }
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         for (FrameData &frame : mFrames)
         {
             vkDestroyImageView(mCtx.device, frame.canvasImage.imageView, nullptr);
@@ -193,7 +193,7 @@ void BdptRenderer::createDescriptorPool()
 
     vkCreateDescriptorPool(mCtx.device, &poolInfo, nullptr, &mDescriptorPool);
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying descriptor set pool");
         vkDestroyDescriptorPool(mCtx.device, mDescriptorPool, nullptr);
     });
@@ -220,7 +220,7 @@ void BdptRenderer::createDescriptorLayout()
 
     vkCreateDescriptorSetLayout(mCtx.device, &globalLayoutInfo, nullptr, &mGlobalSetLayout);
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying descriptor set layout");
         vkDestroyDescriptorSetLayout(mCtx.device, mGlobalSetLayout, nullptr);
     });
@@ -238,7 +238,7 @@ void BdptRenderer::createDescriptorSets()
     canvasSamplerInfo.mipLodBias          = 0.f;
     VkSampler canvasSampler;
     vkCreateSampler(mCtx.device, &canvasSamplerInfo, nullptr, &canvasSampler);
-    mDeleter.enqueue(
+    mCtx.mDeleter.enqueue(
         [this, canvasSampler]() { vkDestroySampler(mCtx.device, canvasSampler, nullptr); });
 
     GpuRayGenConstants gpuRayGenConstants =
@@ -289,7 +289,7 @@ void BdptRenderer::createDescriptorSets()
         vkUpdateDescriptorSets(mCtx.device, writes.size(), writes.data(), 0, nullptr);
     }
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...deleting buffers");
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
@@ -314,7 +314,7 @@ void BdptRenderer::createPipeline()
     H_CHECK(vkCreatePipelineLayout(mCtx.device, &mainLayoutInfo, nullptr, &mBdptPipelineLayout),
             "Failed to create pipeline layout");
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying pipeline layout object");
         vkDestroyPipelineLayout(mCtx.device, mBdptPipelineLayout, nullptr);
     });
@@ -329,7 +329,7 @@ void BdptRenderer::createPipeline()
                                      &mBdptPipeline),
             "Failed to create compute pipeline");
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying compute pipeline");
         vkDestroyPipeline(mCtx.device, mBdptPipeline, nullptr);
     });
@@ -458,7 +458,7 @@ BdptRenderer::~BdptRenderer()
     H_LOG("...waiting for device to be idle");
     vkDeviceWaitIdle(mCtx.device);
 
-    mDeleter.flush();
+    mCtx.mDeleter.flush();
 }
 
 }  // namespace hatgpu

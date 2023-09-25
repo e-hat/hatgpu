@@ -12,6 +12,7 @@
 #include "vk/deleter.h"
 #include "vk/upload_context.h"
 
+#include <algorithm>
 #include <tracy/TracyVulkan.hpp>
 
 #include <deque>
@@ -44,7 +45,7 @@ class Application
     static constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
 
   protected:
-    std::vector<std::unique_ptr<Layer>> mLayers;
+    LayerStack mLayers;
 
     vk::Allocator mAllocator;
 
@@ -71,6 +72,27 @@ class Application
 
     void immediateSubmit(std::function<void(VkCommandBuffer)> &&function);
 
+    void PushLayer(std::unique_ptr<Layer> layer)
+    {
+        layer->OnAttach(mCtx);
+        mLayers.PushLayer(std::move(layer));
+    }
+    void PushOverlay(std::unique_ptr<Layer> layer)
+    {
+        layer->OnAttach(mCtx);
+        mLayers.PushOverlay(std::move(layer));
+    }
+    void PopLayer(std::unique_ptr<Layer> layer)
+    {
+        layer->OnDetach(mCtx);
+        mLayers.PopLayer(std::move(layer));
+    }
+    void PopOverlay(std::unique_ptr<Layer> layer)
+    {
+        layer->OnDetach(mCtx);
+        mLayers.PopOverlay(std::move(layer));
+    }
+
     vk::UploadContext mUploadContext;
 
     // We are setting this to 1 since we will possibly have lots
@@ -85,7 +107,7 @@ class Application
     Camera mCamera;
     std::vector<VkImageView> mSwapchainImageViews;
 
-    VkCtx mCtx;
+    vk::Ctx mCtx;
 
     uint32_t mCurrentImageIndex;
     VkImage mCurrentSwapchainImage = VK_NULL_HANDLE;
@@ -142,8 +164,6 @@ class Application
     void createCommandBuffers();
     void createTracyContexts();
     void createUploadContext();
-
-    vk::DeletionQueue mDeleter;
 };
 }  // namespace hatgpu
 #endif

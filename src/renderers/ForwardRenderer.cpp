@@ -81,6 +81,8 @@ void ForwardRenderer::OnImGuiRender()
     ImGui::Text("You are viewing the forward renderer.");
     ImGui::Text("Move around with WASD, LSHIFT and LCTRL");
     ImGui::Text("Look around with arrow keys. Zoom in/out with mouse wheel");
+
+    mAabbLayerToggle.Draw("Aabb Layer");
 }
 
 void ForwardRenderer::createDescriptors()
@@ -209,7 +211,7 @@ void ForwardRenderer::createDescriptors()
 
     vkCreateDescriptorSetLayout(mCtx.device, &textureLayoutInfo, nullptr, &mTextureSetLayout);
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying descriptor sets");
         vkDestroyDescriptorSetLayout(mCtx.device, mGlobalSetLayout, nullptr);
         vkDestroyDescriptorSetLayout(mCtx.device, mTextureSetLayout, nullptr);
@@ -297,7 +299,7 @@ void ForwardRenderer::createGraphicsPipeline()
                                    &mGraphicsPipelineLayout),
             "Failed to create pipeline layout object");
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying graphics pipeline layout");
         vkDestroyPipelineLayout(mCtx.device, mGraphicsPipelineLayout, nullptr);
     });
@@ -340,7 +342,7 @@ void ForwardRenderer::createGraphicsPipeline()
                                       &mGraphicsPipeline),
             "Failed to create graphics pipeline");
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying graphics pipeline");
         vkDestroyPipeline(mCtx.device, mGraphicsPipeline, nullptr);
     });
@@ -376,7 +378,7 @@ void ForwardRenderer::uploadTextures(Mesh &mesh)
         mGpuTextures[path]        = gpuTexture;
 
         // Get rid of the staging buffer, queue the deletion operation for the GPU image
-        mDeleter.enqueue([this, gpuTexture]() mutable { gpuTexture.destroy(mAllocator); });
+        mCtx.mDeleter.enqueue([this, gpuTexture]() mutable { gpuTexture.destroy(mAllocator); });
     }
 
     for (const auto &[typ, path] : mesh.textures)
@@ -391,7 +393,8 @@ void ForwardRenderer::uploadTextures(Mesh &mesh)
         samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
         VkSampler sampler;
         vkCreateSampler(mCtx.device, &samplerInfo, nullptr, &sampler);
-        mDeleter.enqueue([this, sampler]() { vkDestroySampler(mCtx.device, sampler, nullptr); });
+        mCtx.mDeleter.enqueue(
+            [this, sampler]() { vkDestroySampler(mCtx.device, sampler, nullptr); });
 
         VkDescriptorImageInfo imageBufferInfo{};
         imageBufferInfo.sampler     = sampler;
@@ -429,13 +432,13 @@ void ForwardRenderer::uploadSceneToGpu()
         for (auto &mesh : renderable.model->meshes)
         {
             mesh.upload(mAllocator, mUploadContext);
-            mDeleter.enqueue([this, mesh]() mutable { mesh.destroyBuffers(mAllocator); });
+            mCtx.mDeleter.enqueue([this, mesh]() mutable { mesh.destroyBuffers(mAllocator); });
 
             uploadTextures(mesh);
         }
     }
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying texture image views");
         for (const auto &[_, texture] : mGpuTextures)
         {
@@ -590,7 +593,7 @@ ForwardRenderer::~ForwardRenderer()
     H_LOG("...waiting for device to be idle");
     vkDeviceWaitIdle(mCtx.device);
 
-    mDeleter.flush();
+    mCtx.mDeleter.flush();
 }
 
 }  // namespace hatgpu

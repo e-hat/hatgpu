@@ -274,7 +274,7 @@ void Application::Init()
     H_LOG("...creating VMA allocator");
     mAllocator = vk::Allocator(allocatorInfo);
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying VMA allocator");
         mAllocator.destroy();
     });
@@ -295,7 +295,7 @@ void Application::initWindow()
 
     mInputManager.SetGLFWCallbacks(mWindow, &mCamera);
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying GLFW window");
         glfwDestroyWindow(mWindow);
         glfwTerminate();
@@ -312,14 +312,14 @@ void Application::initVulkan()
     createLogicalDevice();
     createSwapchain();
     createSwapchainImageViews();
-    mDeleter.enqueue([this]() { cleanupSwapchain(); });
+    mCtx.mDeleter.enqueue([this]() { cleanupSwapchain(); });
     createSyncObjects();
     createCommandPool();
     createCommandBuffers();
     createTracyContexts();
     H_LOG("...creating upload context");
     mUploadContext = vk::UploadContext(mCtx.device, mGraphicsQueue, mGraphicsQueueIndex);
-    mDeleter.enqueue([this]() { mUploadContext.destroy(); });
+    mCtx.mDeleter.enqueue([this]() { mUploadContext.destroy(); });
 }
 
 bool Application::checkDeviceExtensionSupport(const VkPhysicalDevice &device)
@@ -405,7 +405,7 @@ void Application::initImGui()
     ImGui_ImplVulkan_DestroyFontUploadObjects();
 
     // add the destroy the imgui created structures
-    mDeleter.enqueue([imguiPool, this] {
+    mCtx.mDeleter.enqueue([imguiPool, this] {
         H_LOG("...destroying Dear ImGui descriptor pool");
         vkDestroyDescriptorPool(mCtx.device, imguiPool, nullptr);
         ImGui_ImplVulkan_Shutdown();
@@ -435,7 +435,7 @@ void Application::createDepthImage()
     H_CHECK(vkCreateImageView(mCtx.device, &viewInfo, nullptr, &mDepthImageView),
             "Failed to create depth image view");
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying depth image");
         vkDestroyImageView(mCtx.device, mDepthImageView, nullptr);
         vmaDestroyImage(mAllocator.Impl, mDepthImage.image, mDepthImage.allocation);
@@ -564,7 +564,7 @@ void Application::Run()
 
             for (const auto &layer : mLayers)
             {
-                layer->OnRender();
+                layer->OnRender(*mCurrentDrawCtx);
             }
         }
 
@@ -659,7 +659,7 @@ void Application::createInstance()
 
     H_CHECK(vkCreateInstance(&createInfo, nullptr, &mCtx.instance), "Failed to create VkInstance");
 
-    mDeleter.enqueue([this] {
+    mCtx.mDeleter.enqueue([this] {
         H_LOG("...destroying instance");
         vkDestroyInstance(mCtx.instance, nullptr);
     });
@@ -683,7 +683,7 @@ void Application::setupDebugMessenger()
     H_CHECK(CreateDebugUtilsMessengerEXT(mCtx.instance, &createInfo, nullptr, &mCtx.debugMessenger),
             "Failed to setup debug messenger");
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying debug messenger");
         DestroyDebugUtilsMessengerEXT(mCtx.instance, mCtx.debugMessenger, nullptr);
     });
@@ -695,7 +695,7 @@ void Application::createSurface()
     H_CHECK(glfwCreateWindowSurface(mCtx.instance, mWindow, nullptr, &mCtx.surface),
             "Failed to create window surface");
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying window surface");
         vkDestroySurfaceKHR(mCtx.instance, mCtx.surface, nullptr);
     });
@@ -839,7 +839,7 @@ void Application::createLogicalDevice()
     H_CHECK(vkCreateDevice(mCtx.physicalDevice, &createInfo, nullptr, &mCtx.device),
             "Unable to create logical device");
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying logical device");
         vkDestroyDevice(mCtx.device, nullptr);
     });
@@ -935,7 +935,7 @@ void Application::createCommandPool()
     H_CHECK(vkCreateCommandPool(mCtx.device, &poolInfo, nullptr, &mCommandPool),
             "Failed to create command pool");
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying command pool");
         vkDestroyCommandPool(mCtx.device, mCommandPool, nullptr);
     });
@@ -966,7 +966,7 @@ void Application::createTracyContexts()
                                                mDrawCtxs[i].commandBuffer);
     }
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying Tracy contexts");
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
@@ -993,7 +993,7 @@ void Application::createSyncObjects()
                 "Failed to create sync object");
     }
 
-    mDeleter.enqueue([this]() {
+    mCtx.mDeleter.enqueue([this]() {
         H_LOG("...destroying frame sync objects");
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
@@ -1043,6 +1043,6 @@ Application::~Application()
     H_LOG("...waiting for device to be idle");
     vkDeviceWaitIdle(mCtx.device);
 
-    mDeleter.flush();
+    mCtx.mDeleter.flush();
 }
 }  // namespace hatgpu

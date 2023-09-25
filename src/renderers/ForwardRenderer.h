@@ -7,6 +7,7 @@
 #include "scene/Camera.h"
 #include "scene/Scene.h"
 #include "texture/Texture.h"
+#include "ui/Toggle.h"
 #include "vk/allocator.h"
 #include "vk/deleter.h"
 #include "vk/gpu_texture.h"
@@ -69,6 +70,8 @@ class ForwardRenderer : public Application
         vk::AllocatedBuffer lightBuffer;
     };
     std::array<FrameData, kMaxFramesInFlight> mFrames;
+
+    ui::Toggle mAabbLayerToggle;
 
     TextureManager mTextureManager;
     std::unordered_map<std::string, vk::GpuTexture> mGpuTextures;

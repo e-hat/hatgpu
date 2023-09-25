@@ -18,9 +18,16 @@ struct PushConstants
     glm::mat4 renderMatrix;
 };
 }  // namespace
-void AabbLayer::OnAttach(const VkCtx &ctx)
+
+void AabbLayer::OnAttach(vk::Ctx &ctx)
 {
     H_LOG("Attaching AabbLayer");
+
+    if (mInitialized)
+    {
+        H_LOG("...already initialized.");
+        return;
+    }
 
     H_LOG("...creating draw pipeline");
     VkPipelineShaderStageCreateInfo vertexStageInfo =
@@ -128,18 +135,23 @@ void AabbLayer::OnAttach(const VkCtx &ctx)
                                       &mPipeline),
             "Failed to create graphics pipeline");
 
+    ctx.mDeleter.enqueue([this, ctx]() {
+        H_LOG("Destroying AabbLayer");
+
+        H_LOG("...destroying pipeline layout object");
+        vkDestroyPipelineLayout(ctx.device, mLayout, nullptr);
+
+        H_LOG("...destroying graphics pipeline");
+        vkDestroyPipeline(ctx.device, mPipeline, nullptr);
+    });
+
     vkDestroyShaderModule(ctx.device, vertexStageInfo.module, nullptr);
 }
 
-void AabbLayer::OnDetach(const VkCtx &ctx)
+void AabbLayer::OnDetach([[maybe_unused]] vk::Ctx &ctx)
 {
     H_LOG("Detaching AabbLayer");
-
-    H_LOG("...destroying pipeline layout object");
-    vkDestroyPipelineLayout(ctx.device, mLayout, nullptr);
-
-    H_LOG("...destroying graphics pipeline");
-    vkDestroyPipeline(ctx.device, mPipeline, nullptr);
+    H_LOG("...nothing to do");
 }
 
 void AabbLayer::OnImGuiRender()
@@ -147,6 +159,5 @@ void AabbLayer::OnImGuiRender()
     ImGui::Checkbox("Enable AABB visualization layer", &mToggled);
 }
 
-void AabbLayer::OnRender() {}
-
+void AabbLayer::OnRender([[maybe_unused]] DrawCtx &drawCtx) {}
 }  // namespace hatgpu

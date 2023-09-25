@@ -1,5 +1,6 @@
 #ifndef _INCLUDE_AABBLAYER_H
 #define _INCLUDE_AABBLAYER_H
+#include "application/DrawCtx.h"
 #include "hatpch.h"
 
 #include "application/Layer.h"
@@ -13,9 +14,9 @@ class AabbLayer : public Layer
   public:
     AabbLayer() : Layer("AabbLayer"), mToggled(false) {}
 
-    void OnAttach(const VkCtx &ctx) override;
-    void OnDetach(const VkCtx &ctx) override;
-    void OnRender() override;
+    void OnAttach(vk::Ctx &ctx) override;
+    void OnDetach(vk::Ctx &ctx) override;
+    void OnRender(DrawCtx &drawCtx) override;
     void OnImGuiRender() override;
 
   private:

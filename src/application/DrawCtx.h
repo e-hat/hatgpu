@@ -15,7 +15,7 @@ struct DrawCtx
     VkSemaphore renderFinishedSemaphore;
     VkFence inFlightFence;
     TracyVkCtx tracyCtx;
-    VkCtx vk;
+    vk::Ctx vk;
     VkImageView swapchainImageView;
     VkImage swapchainImage;
 };

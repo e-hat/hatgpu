@@ -2,9 +2,13 @@
 #define _INCLUDE_CTX_H
 #include "hatpch.h"
 
+#include "deleter.h"
+
 namespace hatgpu
 {
-struct VkCtx
+namespace vk
+{
+struct Ctx
 {
     VkInstance instance;
     VkDebugUtilsMessengerEXT debugMessenger;
@@ -15,7 +19,10 @@ struct VkCtx
     VkSwapchainKHR swapchain;
     VkFormat swapchainImageFormat;
     VkExtent2D swapchainExtent;
+
+    vk::DeletionQueue mDeleter;
 };
+}  // namespace vk
 }  // namespace hatgpu
 
 #endif
