@@ -4,18 +4,18 @@
 
 namespace hatgpu
 {
-void LayerStack::PushLayer(std::unique_ptr<Layer> layer)
+void LayerStack::PushLayer(std::shared_ptr<Layer> layer)
 {
     mLayers.emplace(begin() + mLayerInsertIndex, std::move(layer));
     ++mLayerInsertIndex;
 }
 
-void LayerStack::PushOverlay(std::unique_ptr<Layer> layer)
+void LayerStack::PushOverlay(std::shared_ptr<Layer> layer)
 {
     mLayers.emplace_back(std::move(layer));
 }
 
-void LayerStack::PopLayer(std::unique_ptr<Layer> layer)
+void LayerStack::PopLayer(std::shared_ptr<Layer> layer)
 {
     auto it = std::find(begin(), end(), layer);
     if (it != end())
@@ -25,7 +25,7 @@ void LayerStack::PopLayer(std::unique_ptr<Layer> layer)
     }
 }
 
-void LayerStack::PopOverlay(std::unique_ptr<Layer> layer)
+void LayerStack::PopOverlay(std::shared_ptr<Layer> layer)
 {
     auto it = std::find(begin(), end(), layer);
     if (it != end())

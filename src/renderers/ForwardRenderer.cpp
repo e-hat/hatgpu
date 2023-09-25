@@ -55,7 +55,7 @@ static constexpr const char *kFragmentShaderName = "../shaders/bin/forward/shade
 }  // namespace
 
 ForwardRenderer::ForwardRenderer(const std::string &scenePath)
-    : Application("HatGPU"), mScenePath(scenePath)
+    : Application("HatGPU"), mScenePath(scenePath), mAabbLayer(std::make_shared<AabbLayer>())
 {}
 
 void ForwardRenderer::Init()
@@ -82,7 +82,17 @@ void ForwardRenderer::OnImGuiRender()
     ImGui::Text("Move around with WASD, LSHIFT and LCTRL");
     ImGui::Text("Look around with arrow keys. Zoom in/out with mouse wheel");
 
-    mAabbLayerToggle.Draw("Aabb Layer");
+    if (auto aabbToggled = mAabbLayerToggle.Draw("Aabb Layer"); aabbToggled.has_value())
+    {
+        if (aabbToggled.value())
+        {
+            PushOverlay(mAabbLayer);
+        }
+        else
+        {
+            PopOverlay(mAabbLayer);
+        }
+    }
 }
 
 void ForwardRenderer::createDescriptors()

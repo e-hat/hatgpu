@@ -30,16 +30,18 @@ class LayerStack
   public:
     LayerStack() = default;
 
-    void PushLayer(std::unique_ptr<Layer> layer);
-    void PushOverlay(std::unique_ptr<Layer> layer);
-    void PopLayer(std::unique_ptr<Layer> layer);
-    void PopOverlay(std::unique_ptr<Layer> layer);
+    // Layers could probably be stored by value here, but I don't want to
+    // put that restriction on future Layers since they could be complicated.
+    void PushLayer(std::shared_ptr<Layer> layer);
+    void PushOverlay(std::shared_ptr<Layer> layer);
+    void PopLayer(std::shared_ptr<Layer> layer);
+    void PopOverlay(std::shared_ptr<Layer> layer);
 
-    inline std::vector<std::unique_ptr<Layer>>::iterator begin() { return mLayers.begin(); }
-    inline std::vector<std::unique_ptr<Layer>>::iterator end() { return mLayers.end(); }
+    inline std::vector<std::shared_ptr<Layer>>::iterator begin() { return mLayers.begin(); }
+    inline std::vector<std::shared_ptr<Layer>>::iterator end() { return mLayers.end(); }
 
   private:
-    std::vector<std::unique_ptr<Layer>> mLayers;
+    std::vector<std::shared_ptr<Layer>> mLayers;
     uint32_t mLayerInsertIndex = 0;
 };
 }  // namespace hatgpu

@@ -4,6 +4,7 @@
 
 #include "application/Application.h"
 #include "geometry/Model.h"
+#include "renderers/layers/AabbLayer.h"
 #include "scene/Camera.h"
 #include "scene/Scene.h"
 #include "texture/Texture.h"
@@ -82,6 +83,8 @@ class ForwardRenderer : public Application
     Scene mScene;
 
     vk::DeletionQueue mDeleter;
+
+    std::shared_ptr<AabbLayer> mAabbLayer;
 };
 
 }  // namespace hatgpu

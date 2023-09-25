@@ -147,6 +147,8 @@ void AabbLayer::OnAttach(vk::Ctx &ctx, vk::DeletionQueue &deleter)
     });
 
     vkDestroyShaderModule(ctx.device, vertexStageInfo.module, nullptr);
+
+    mInitialized = true;
 }
 
 void AabbLayer::OnDetach([[maybe_unused]] vk::Ctx &ctx)

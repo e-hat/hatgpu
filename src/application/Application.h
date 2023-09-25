@@ -72,22 +72,22 @@ class Application
 
     void immediateSubmit(std::function<void(VkCommandBuffer)> &&function);
 
-    void PushLayer(std::unique_ptr<Layer> layer)
+    void PushLayer(std::shared_ptr<Layer> layer)
     {
         layer->OnAttach(mCtx, mDeleter);
         mLayers.PushLayer(std::move(layer));
     }
-    void PushOverlay(std::unique_ptr<Layer> layer)
+    void PushOverlay(std::shared_ptr<Layer> layer)
     {
         layer->OnAttach(mCtx, mDeleter);
         mLayers.PushOverlay(std::move(layer));
     }
-    void PopLayer(std::unique_ptr<Layer> layer)
+    void PopLayer(std::shared_ptr<Layer> layer)
     {
         layer->OnDetach(mCtx);
         mLayers.PopLayer(std::move(layer));
     }
-    void PopOverlay(std::unique_ptr<Layer> layer)
+    void PopOverlay(std::shared_ptr<Layer> layer)
     {
         layer->OnDetach(mCtx);
         mLayers.PopOverlay(std::move(layer));
