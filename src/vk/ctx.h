@@ -19,8 +19,6 @@ struct Ctx
     VkSwapchainKHR swapchain;
     VkFormat swapchainImageFormat;
     VkExtent2D swapchainExtent;
-
-    vk::DeletionQueue mDeleter;
 };
 }  // namespace vk
 }  // namespace hatgpu

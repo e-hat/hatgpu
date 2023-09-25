@@ -4,6 +4,7 @@
 #include "AabbLayer.h"
 
 #include "imgui.h"
+#include "vk/deleter.h"
 #include "vk/initializers.h"
 #include "vk/shader.h"
 
@@ -19,7 +20,7 @@ struct PushConstants
 };
 }  // namespace
 
-void AabbLayer::OnAttach(vk::Ctx &ctx)
+void AabbLayer::OnAttach(vk::Ctx &ctx, vk::DeletionQueue &deleter)
 {
     H_LOG("Attaching AabbLayer");
 
@@ -135,7 +136,7 @@ void AabbLayer::OnAttach(vk::Ctx &ctx)
                                       &mPipeline),
             "Failed to create graphics pipeline");
 
-    ctx.mDeleter.enqueue([this, ctx]() {
+    deleter.enqueue([this, ctx]() {
         H_LOG("Destroying AabbLayer");
 
         H_LOG("...destroying pipeline layout object");
@@ -154,10 +155,7 @@ void AabbLayer::OnDetach([[maybe_unused]] vk::Ctx &ctx)
     H_LOG("...nothing to do");
 }
 
-void AabbLayer::OnImGuiRender()
-{
-    ImGui::Checkbox("Enable AABB visualization layer", &mToggled);
-}
+void AabbLayer::OnImGuiRender() {}
 
 void AabbLayer::OnRender([[maybe_unused]] DrawCtx &drawCtx) {}
 }  // namespace hatgpu

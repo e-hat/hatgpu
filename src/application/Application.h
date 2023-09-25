@@ -74,12 +74,12 @@ class Application
 
     void PushLayer(std::unique_ptr<Layer> layer)
     {
-        layer->OnAttach(mCtx);
+        layer->OnAttach(mCtx, mDeleter);
         mLayers.PushLayer(std::move(layer));
     }
     void PushOverlay(std::unique_ptr<Layer> layer)
     {
-        layer->OnAttach(mCtx);
+        layer->OnAttach(mCtx, mDeleter);
         mLayers.PushOverlay(std::move(layer));
     }
     void PopLayer(std::unique_ptr<Layer> layer)
@@ -142,6 +142,8 @@ class Application
 
     VkShaderModule createShaderModule(const std::vector<char> &code);
     void recreateSwapchain();
+
+    vk::DeletionQueue mDeleter;
 
   private:
     void initWindow();

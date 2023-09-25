@@ -4,6 +4,7 @@
 #include "hatpch.h"
 
 #include "vk/ctx.h"
+#include "vk/deleter.h"
 
 namespace hatgpu
 {
@@ -12,9 +13,9 @@ class Layer
   public:
     Layer(const std::string &debugName) : mDebugName(debugName) {}
 
-    virtual void OnAttach(vk::Ctx &ctx)     = 0;
-    virtual void OnDetach(vk::Ctx &ctx)     = 0;
-    virtual void OnRender(DrawCtx &drawCtx) = 0;
+    virtual void OnAttach(vk::Ctx &ctx, vk::DeletionQueue &deleter) = 0;
+    virtual void OnDetach(vk::Ctx &ctx)                             = 0;
+    virtual void OnRender(DrawCtx &drawCtx)                         = 0;
     virtual void OnImGuiRender() {}
 
   protected:

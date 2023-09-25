@@ -5,6 +5,7 @@
 
 #include "application/Layer.h"
 #include "vk/ctx.h"
+#include "vk/deleter.h"
 
 namespace hatgpu
 {
@@ -12,16 +13,14 @@ namespace hatgpu
 class AabbLayer : public Layer
 {
   public:
-    AabbLayer() : Layer("AabbLayer"), mToggled(false) {}
+    AabbLayer() : Layer("AabbLayer") {}
 
-    void OnAttach(vk::Ctx &ctx) override;
+    void OnAttach(vk::Ctx &ctx, vk::DeletionQueue &deleter) override;
     void OnDetach(vk::Ctx &ctx) override;
     void OnRender(DrawCtx &drawCtx) override;
     void OnImGuiRender() override;
 
   private:
-    bool mToggled;
-
     VkPipelineLayout mLayout;
     VkPipeline mPipeline;
 };
