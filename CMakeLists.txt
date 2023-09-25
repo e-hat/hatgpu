@@ -53,7 +53,8 @@ set(SOURCES ${SOURCES}
         ${SOURCE_DIR}/geometry/prim/Box.cpp 
         ${SOURCE_DIR}/application/Layer.h 
         ${SOURCE_DIR}/renderers/layers/AabbLayer.cpp 
-        ${SOURCE_DIR}/renderers/layers/AabbLayer.h)
+        ${SOURCE_DIR}/renderers/layers/AabbLayer.h
+        ${SOURCE_DIR}/ui/Toggle.h)
 add_executable(hatgpu ${SOURCES})
 
 set(INCLUDES ${SOURCE_DIR})
