@@ -14,17 +14,30 @@
 #ifdef SEGFAULT_HANDLER
 namespace
 {
-static void SignalHandler(int sig)
+static void SignalHandlerInner(int s)
 {
-    // Dump the logs when we get a signal
-    LOGGER.error("[SEGFAULT HANDLER] Signal {}", sig);
+    // Dump the logs
+    LOGGER.error("signal {}", s);
     LOGGER.dump_backtrace();
     BREAK;
 }
 
-static void SetSegfaultHandler()
+static void SegfaultHandler(int s)
 {
-    signal(SIGSEGV, SignalHandler);
+    LOGGER.error("[SEGFAULT HANDLER]");
+    SignalHandlerInner(s);
+}
+
+static void AbortHandler(int s)
+{
+    LOGGER.error("[ABORT HANDLER]");
+    SignalHandlerInner(s);
+}
+
+static void SetSignalHandlers()
+{
+    signal(SIGSEGV, SegfaultHandler);
+    signal(SIGABRT, AbortHandler);
 }
 }  // namespace
 #endif
@@ -52,7 +65,7 @@ spdlog::logger &Logger::GetOrCreateInstance()
         mInstance->enable_backtrace(128);
 
 #ifdef SEGFAULT_HANDLER
-        SetSegfaultHandler();
+        SetSignalHandlers();
 #endif
     }
     return *mInstance;
