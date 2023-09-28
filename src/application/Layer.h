@@ -45,6 +45,7 @@ struct LayerRequirements
 {
     VkImageUsageFlags swapchainImageUsage;
     std::unordered_set<std::string> deviceExtensions;
+    VkPhysicalDeviceFeatures deviceFeatures{};
 
     LayerRequirements concat(LayerRequirements other) const
     {
@@ -54,7 +55,19 @@ struct LayerRequirements
             newDeviceExtensions.insert(extension);
         }
 
-        return {swapchainImageUsage | other.swapchainImageUsage, newDeviceExtensions};
+        // This is so janky lol
+        // when will we have c++ reflection...also why is this struct designed like this
+        // im sure there's a good reason
+        VkPhysicalDeviceFeatures newDeviceFeatures{};
+        for (size_t i = 0; i < sizeof(VkPhysicalDeviceFeatures) / sizeof(uint8_t); ++i)
+        {
+            *(reinterpret_cast<uint8_t *>(&newDeviceFeatures) + i) =
+                *(reinterpret_cast<const uint8_t *>(&deviceFeatures) + i) |
+                *(reinterpret_cast<const uint8_t *>(&other.deviceFeatures) + i);
+        }
+
+        return {swapchainImageUsage | other.swapchainImageUsage, newDeviceExtensions,
+                newDeviceFeatures};
     }
 };
 

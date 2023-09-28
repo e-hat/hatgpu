@@ -58,9 +58,13 @@ ForwardRenderer::ForwardRenderer(std::shared_ptr<vk::Ctx> ctx, std::shared_ptr<S
     : Layer("ForwardRenderer", ctx, scene)
 {}
 
-const LayerRequirements ForwardRenderer::kRequirements = {
-    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-    {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME}};
+const LayerRequirements ForwardRenderer::kRequirements = []() {
+    LayerRequirements result{
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME}};
+    result.deviceFeatures.samplerAnisotropy = VK_TRUE;
+    return result;
+}();
 
 void ForwardRenderer::OnAttach()
 {

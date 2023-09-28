@@ -1,4 +1,3 @@
-#include <vulkan/vulkan_core.h>
 #include "application/Layer.h"
 #include "hatpch.h"
 
@@ -66,9 +65,11 @@ BdptRenderer::BdptRenderer(std::shared_ptr<vk::Ctx> ctx, std::shared_ptr<Scene> 
     : Layer("HatGPU", ctx, scene)
 {}
 
-const LayerRequirements BdptRenderer::kRequirements = {
-    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-    {VK_KHR_SWAPCHAIN_EXTENSION_NAME}};
+const LayerRequirements BdptRenderer::kRequirements = []() -> LayerRequirements {
+    LayerRequirements result{VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                             {VK_KHR_SWAPCHAIN_EXTENSION_NAME}};
+    return result;
+}();
 
 void BdptRenderer::OnAttach()
 {

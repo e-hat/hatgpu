@@ -268,8 +268,10 @@ Application::Application(const std::string &windowName, const std::string &scene
 
     mForwardRenderer = std::make_shared<ForwardRenderer>(mCtx, mScene);
     mBdptRenderer    = std::make_shared<BdptRenderer>(mCtx, mScene);
+    mAabbLayer       = std::make_shared<AabbLayer>(mCtx, mScene);
     mLayers.push_back(mForwardRenderer);
     mLayers.push_back(mBdptRenderer);
+    mLayers.push_back(mAabbLayer);
 }
 
 void Application::Init()
@@ -300,8 +302,9 @@ void Application::Init()
     }
 
     // Set up initial layer state
-    // PushLayer(mForwardRenderer);
-    PushLayer(mBdptRenderer);
+    PushLayer(mForwardRenderer);
+    PushLayer(mAabbLayer);
+    // PushLayer(mBdptRenderer);
 
     mDeleter.enqueue([this]() {
         for (const auto &layer : mLayers)
@@ -801,7 +804,7 @@ bool Application::isDeviceSuitable(const VkPhysicalDevice &device, const VkSurfa
     vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
 
     return indices.IsComplete() && extensionsSupported && swapchainAdequate &&
-           supportedFeatures.samplerAnisotropy;
+           supportedFeatures.samplerAnisotropy && supportedFeatures.fillModeNonSolid;
 }
 
 void Application::pickPhysicalDevice()
@@ -848,14 +851,11 @@ void Application::createLogicalDevice()
         queueCreateInfos.push_back(queueCreateInfo);
     }
 
-    VkPhysicalDeviceFeatures deviceFeatures{};
-    deviceFeatures.samplerAnisotropy = VK_TRUE;
-
     VkDeviceCreateInfo createInfo{};
     createInfo.sType                = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.pQueueCreateInfos    = queueCreateInfos.data();
     createInfo.queueCreateInfoCount = queueCreateInfos.size();
-    createInfo.pEnabledFeatures     = &deviceFeatures;
+    createInfo.pEnabledFeatures     = &mRequirements.deviceFeatures;
 
     std::vector<const char *> deviceExtensionList;
     for (const auto &extension : mRequirements.deviceExtensions)

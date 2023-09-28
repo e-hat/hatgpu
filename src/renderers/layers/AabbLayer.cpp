@@ -1,5 +1,4 @@
 #include <vulkan/vulkan_core.h>
-#include "hatpch.h"
 
 #include "AabbLayer.h"
 
@@ -20,8 +19,14 @@ struct PushConstants
 };
 }  // namespace
 
-const LayerRequirements AabbLayer::kRequirements = {VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                                                    {VK_KHR_SWAPCHAIN_EXTENSION_NAME}};
+const LayerRequirements AabbLayer::kRequirements = []() -> LayerRequirements {
+    LayerRequirements result{
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        {VK_KHR_SWAPCHAIN_EXTENSION_NAME},
+    };
+    result.deviceFeatures.fillModeNonSolid = VK_TRUE;
+    return result;
+}();
 
 void AabbLayer::OnAttach()
 {
