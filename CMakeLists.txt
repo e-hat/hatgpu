@@ -17,6 +17,7 @@ set(SOURCES ${SOURCES}
         ${SOURCE_DIR}/application/Application.h
         ${SOURCE_DIR}/application/Application.cpp
         ${SOURCE_DIR}/application/DrawCtx.h
+        ${SOURCE_DIR}/application/Constants.h
         ${SOURCE_DIR}/application/InputManager.h
         ${SOURCE_DIR}/application/InputManager.cpp
         ${SOURCE_DIR}/application/Layer.h 

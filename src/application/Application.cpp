@@ -1,3 +1,4 @@
+#include "application/Constants.h"
 #include "hatpch.h"
 
 #include "application/Application.h"
@@ -8,6 +9,7 @@
 #include <backends/imgui_impl_vulkan.h>
 #include <imgui.h>
 #include <vulkan/vulkan_core.h>
+#include <memory>
 #include <tracy/Tracy.hpp>
 #include <tracy/TracyVulkan.hpp>
 
@@ -34,9 +36,6 @@ constexpr bool kEnableValidationLayers =
 #else
     false;
 #endif
-
-const std::vector<const char *> kDeviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-                                                     VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME};
 
 bool checkValidationLayerSupport()
 {
@@ -254,10 +253,23 @@ VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities, GLFWwi
 }
 }  // namespace
 
-Application::Application(const std::string &windowName)
-    : mWindow(nullptr), mWindowName(std::move(windowName)), mInputManager(this), mCamera()
+Application::Application(const std::string &windowName, const std::string &scenePath)
+    : mWindow(nullptr),
+      mWindowName(std::move(windowName)),
+      mInputManager(this),
+      mCtx(std::make_shared<vk::Ctx>()),
+      mScene(std::make_shared<Scene>())
 {
-    mCamera.Position = {0.f, 0.f, 3.f};
+    mScene->camera.Position = {0.f, 0.f, 3.f};
+    mScene->loadFromJson(scenePath);
+
+    mRequirements = ForwardRenderer::kRequirements.concat(BdptRenderer::kRequirements)
+                        .concat(AabbLayer::kRequirements);
+
+    mForwardRenderer = std::make_shared<ForwardRenderer>(mCtx, mScene);
+    mBdptRenderer    = std::make_shared<BdptRenderer>(mCtx, mScene);
+    mLayers.push_back(mForwardRenderer);
+    mLayers.push_back(mBdptRenderer);
 }
 
 void Application::Init()
@@ -267,19 +279,37 @@ void Application::Init()
     initImGui();
 
     VmaAllocatorCreateInfo allocatorInfo = {};
-    allocatorInfo.physicalDevice         = mCtx.physicalDevice;
-    allocatorInfo.device                 = mCtx.device;
-    allocatorInfo.instance               = mCtx.instance;
+    allocatorInfo.physicalDevice         = mCtx->physicalDevice;
+    allocatorInfo.device                 = mCtx->device;
+    allocatorInfo.instance               = mCtx->instance;
 
     H_LOG("...creating VMA allocator");
-    mAllocator = vk::Allocator(allocatorInfo);
+    mCtx->allocator = vk::Allocator(allocatorInfo);
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying VMA allocator");
-        mAllocator.destroy();
+        mCtx->allocator.destroy();
     });
 
     createDepthImage();
+
+    for (auto &drawCtx : mDrawCtxs)
+    {
+        drawCtx.vk             = mCtx;
+        drawCtx.depthImageView = mDepthImageView;
+    }
+
+    // Set up initial layer state
+    // PushLayer(mForwardRenderer);
+    PushLayer(mBdptRenderer);
+
+    mDeleter.enqueue([this]() {
+        for (const auto &layer : mLayers)
+        {
+            H_LOG(std::format("Destroying layer '{}'", layer->DebugName().c_str()))
+            layer->FlushDeletionQueue();
+        }
+    });
 }
 
 void Application::initWindow()
@@ -293,7 +323,7 @@ void Application::initWindow()
     mWindow = glfwCreateWindow(kWidth, kHeight, mWindowName.c_str(), nullptr, nullptr);
     H_ASSERT(mWindow != nullptr, "Could not create GLFWwindow");
 
-    mInputManager.SetGLFWCallbacks(mWindow, &mCamera);
+    mInputManager.SetGLFWCallbacks(mWindow, &mScene->camera);
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying GLFW window");
@@ -318,8 +348,8 @@ void Application::initVulkan()
     createCommandBuffers();
     createTracyContexts();
     H_LOG("...creating upload context");
-    mUploadContext = vk::UploadContext(mCtx.device, mGraphicsQueue, mGraphicsQueueIndex);
-    mDeleter.enqueue([this]() { mUploadContext.destroy(); });
+    mCtx->uploadContext = vk::UploadContext(mCtx->device, mGraphicsQueue, mGraphicsQueueIndex);
+    mDeleter.enqueue([this]() { mCtx->uploadContext.destroy(); });
 }
 
 bool Application::checkDeviceExtensionSupport(const VkPhysicalDevice &device)
@@ -330,7 +360,8 @@ bool Application::checkDeviceExtensionSupport(const VkPhysicalDevice &device)
     vkEnumerateDeviceExtensionProperties(device, nullptr, &supportedExtensionCount,
                                          supportedExtensions.data());
 
-    std::set<std::string> requiredExtensions(kDeviceExtensions.begin(), kDeviceExtensions.end());
+    std::unordered_set<std::string> requiredExtensions(mRequirements.deviceExtensions.begin(),
+                                                       mRequirements.deviceExtensions.end());
     for (const auto &extension : supportedExtensions)
     {
         requiredExtensions.erase(extension.extensionName);
@@ -366,7 +397,7 @@ void Application::initImGui()
     poolInfo.pPoolSizes                 = poolSizes;
 
     VkDescriptorPool imguiPool;
-    H_CHECK(vkCreateDescriptorPool(mCtx.device, &poolInfo, nullptr, &imguiPool),
+    H_CHECK(vkCreateDescriptorPool(mCtx->device, &poolInfo, nullptr, &imguiPool),
             "Failed to create descriptor pool for Dear ImGui");
 
     // 2: initialize imgui library
@@ -380,9 +411,9 @@ void Application::initImGui()
 
     // this initializes imgui for Vulkan
     ImGui_ImplVulkan_InitInfo initInfo = {};
-    initInfo.Instance                  = mCtx.instance;
-    initInfo.PhysicalDevice            = mCtx.physicalDevice;
-    initInfo.Device                    = mCtx.device;
+    initInfo.Instance                  = mCtx->instance;
+    initInfo.PhysicalDevice            = mCtx->physicalDevice;
+    initInfo.Device                    = mCtx->device;
     initInfo.Queue                     = mGraphicsQueue;
     initInfo.DescriptorPool            = imguiPool;
     initInfo.MinImageCount             = 3;
@@ -393,12 +424,12 @@ void Application::initImGui()
     pipelineCreateRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
     pipelineCreateRenderingInfo.pNext = nullptr;
     pipelineCreateRenderingInfo.colorAttachmentCount    = 1;
-    pipelineCreateRenderingInfo.pColorAttachmentFormats = &mCtx.swapchainImageFormat;
+    pipelineCreateRenderingInfo.pColorAttachmentFormats = &mCtx->swapchainImageFormat;
 
     ImGui_ImplVulkan_Init(&initInfo, VK_NULL_HANDLE, pipelineCreateRenderingInfo);
 
     // execute a gpu command to upload imgui font textures
-    mUploadContext.immediateSubmit(
+    mCtx->uploadContext.immediateSubmit(
         [&](VkCommandBuffer cmd) { ImGui_ImplVulkan_CreateFontsTexture(cmd); });
 
     // clear font textures from cpu data
@@ -407,7 +438,7 @@ void Application::initImGui()
     // add the destroy the imgui created structures
     mDeleter.enqueue([imguiPool, this] {
         H_LOG("...destroying Dear ImGui descriptor pool");
-        vkDestroyDescriptorPool(mCtx.device, imguiPool, nullptr);
+        vkDestroyDescriptorPool(mCtx->device, imguiPool, nullptr);
         ImGui_ImplVulkan_Shutdown();
     });
 }
@@ -415,7 +446,7 @@ void Application::initImGui()
 void Application::createDepthImage()
 {
     H_LOG("...creating depth image");
-    VkExtent3D depthImageExtent = {mCtx.swapchainExtent.width, mCtx.swapchainExtent.height, 1};
+    VkExtent3D depthImageExtent = {mCtx->swapchainExtent.width, mCtx->swapchainExtent.height, 1};
 
     VkImageCreateInfo imageInfo =
         vk::imageInfo(kDepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
@@ -426,19 +457,19 @@ void Application::createDepthImage()
     VmaAllocationCreateInfo allocationInfo{};
     allocationInfo.usage         = VMA_MEMORY_USAGE_GPU_ONLY;
     allocationInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    H_CHECK(vmaCreateImage(mAllocator.Impl, &imageInfo, &allocationInfo, &mDepthImage.image,
+    H_CHECK(vmaCreateImage(mCtx->allocator.Impl, &imageInfo, &allocationInfo, &mDepthImage.image,
                            &mDepthImage.allocation, nullptr),
             "Failed to allocate depth image");
 
     VkImageViewCreateInfo viewInfo =
         vk::imageViewInfo(kDepthFormat, mDepthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT);
-    H_CHECK(vkCreateImageView(mCtx.device, &viewInfo, nullptr, &mDepthImageView),
+    H_CHECK(vkCreateImageView(mCtx->device, &viewInfo, nullptr, &mDepthImageView),
             "Failed to create depth image view");
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying depth image");
-        vkDestroyImageView(mCtx.device, mDepthImageView, nullptr);
-        vmaDestroyImage(mAllocator.Impl, mDepthImage.image, mDepthImage.allocation);
+        vkDestroyImageView(mCtx->device, mDepthImageView, nullptr);
+        vmaDestroyImage(mCtx->allocator.Impl, mDepthImage.image, mDepthImage.allocation);
     });
 }
 
@@ -454,7 +485,7 @@ void Application::renderImGui(VkCommandBuffer commandBuffer)
     VkRenderingInfo info{};
     info.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
     info.flags                = 0;
-    info.renderArea           = {.offset = {0, 0}, .extent = mCtx.swapchainExtent};
+    info.renderArea           = {.offset = {0, 0}, .extent = mCtx->swapchainExtent};
     info.layerCount           = 1;
     info.colorAttachmentCount = 1;
     info.pColorAttachments    = &colorAttachment;
@@ -485,23 +516,26 @@ void Application::renderImGui(VkCommandBuffer commandBuffer)
                          &barrier);
 }
 
+void Application::OnImGuiRender()
+{
+    ImGui::Text("hih");
+}
+
 void Application::Run()
 {
-    H_LOG("...creating framebuffers");
-
     while (!glfwWindowShouldClose(mWindow))
     {
         mInputManager.ProcessInput(mWindow, mTime.GetDeltaTime());
         ZoneScopedC(tracy::Color::Aqua);
         {
             ZoneScopedNC("vkWaitForFences", tracy::Color::Linen);
-            vkWaitForFences(mCtx.device, 1, &mCurrentDrawCtx->inFlightFence, VK_TRUE,
+            vkWaitForFences(mCtx->device, 1, &mCurrentDrawCtx->inFlightFence, VK_TRUE,
                             std::numeric_limits<uint64_t>::max());
         }
         {
             ZoneScopedNC("vkAcquireNextImageKHR", tracy::Color::Orchid);
             VkResult nextImageResult = vkAcquireNextImageKHR(
-                mCtx.device, mCtx.swapchain, std::numeric_limits<uint64_t>::max(),
+                mCtx->device, mCtx->swapchain, std::numeric_limits<uint64_t>::max(),
                 mCurrentDrawCtx->imageAvailableSemaphore, VK_NULL_HANDLE, &mCurrentImageIndex);
             if (nextImageResult == VK_ERROR_OUT_OF_DATE_KHR)
             {
@@ -511,8 +545,13 @@ void Application::Run()
             H_ASSERT(nextImageResult == VK_SUCCESS && nextImageResult != VK_SUBOPTIMAL_KHR,
                      "Failed to acquire swapchain image");
             mCurrentSwapchainImage = mSwapchainImages[mCurrentImageIndex];
+
+            // Update current draw ctx
+            // This is a little error prone
+            mCurrentDrawCtx->swapchainImage     = mCurrentSwapchainImage;
+            mCurrentDrawCtx->swapchainImageView = mSwapchainImageViews[mCurrentImageIndex];
         }
-        vkResetFences(mCtx.device, 1, &mCurrentDrawCtx->inFlightFence);
+        vkResetFences(mCtx->device, 1, &mCurrentDrawCtx->inFlightFence);
         vkResetCommandBuffer(mCurrentDrawCtx->commandBuffer, 0);
 
         VkCommandBufferBeginInfo beginInfo = vk::commandBufferBeginInfo();
@@ -547,29 +586,30 @@ void Application::Run()
         ImGui::NewFrame();
 
         OnImGuiRender();
-        for (const auto &layer : mLayers)
+        for (const auto &layer : mLayerStack)
         {
             layer->OnImGuiRender();
         }
 
         {
-            VkZoneC("ImGui::Render", tracy::Color::Blue);
+            TracyVkZoneC(mCurrentDrawCtx->tracyCtx, mCurrentDrawCtx->commandBuffer, "ImGui::Render",
+                         tracy::Color::Blue);
             ImGui::Render();
         }
 
         {
-            VkZoneC("OnRender", tracy::Color::MediumAquamarine);
+            TracyVkZoneC(mCurrentDrawCtx->tracyCtx, mCurrentDrawCtx->commandBuffer, "OnRender",
+                         tracy::Color::MediumAquamarine);
 
-            OnRender();
-
-            for (const auto &layer : mLayers)
+            for (const auto &layer : mLayerStack)
             {
                 layer->OnRender(*mCurrentDrawCtx);
             }
         }
 
         {
-            VkZoneC("ImGui RenderDrawData", tracy::Color::Blue);
+            TracyVkZoneC(mCurrentDrawCtx->tracyCtx, mCurrentDrawCtx->commandBuffer,
+                         "ImGui RenderDrawData", tracy::Color::Blue);
             renderImGui(mCurrentDrawCtx->commandBuffer);
         }
 
@@ -579,6 +619,7 @@ void Application::Run()
 
         VkSubmitInfo submitInfo                   = vk::submitInfo(&mCurrentDrawCtx->commandBuffer);
         std::array<VkSemaphore, 1> waitSemaphores = {mCurrentDrawCtx->imageAvailableSemaphore};
+        // TODO: collect this info from layers, we should be unaware of their implementation here
         std::array<VkPipelineStageFlags, 1> waitStages = {
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT};
         submitInfo.waitSemaphoreCount               = waitSemaphores.size();
@@ -594,7 +635,7 @@ void Application::Run()
         VkPresentInfoKHR presentInfo             = vk::presentInfo();
         presentInfo.waitSemaphoreCount           = 1;
         presentInfo.pWaitSemaphores              = signalSemaphores.data();
-        std::array<VkSwapchainKHR, 1> swapchains = {mCtx.swapchain};
+        std::array<VkSwapchainKHR, 1> swapchains = {mCtx->swapchain};
         presentInfo.swapchainCount               = 1;
         presentInfo.pSwapchains                  = swapchains.data();
         presentInfo.pImageIndices                = &mCurrentImageIndex;
@@ -616,8 +657,7 @@ void Application::Run()
         FrameMark;
     }
 
-    vkDeviceWaitIdle(mCtx.device);
-    Exit();
+    vkDeviceWaitIdle(mCtx->device);
 }
 
 void Application::createInstance()
@@ -657,11 +697,11 @@ void Application::createInstance()
     createInfo.enabledExtensionCount   = static_cast<uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
 
-    H_CHECK(vkCreateInstance(&createInfo, nullptr, &mCtx.instance), "Failed to create VkInstance");
+    H_CHECK(vkCreateInstance(&createInfo, nullptr, &mCtx->instance), "Failed to create VkInstance");
 
     mDeleter.enqueue([this] {
         H_LOG("...destroying instance");
-        vkDestroyInstance(mCtx.instance, nullptr);
+        vkDestroyInstance(mCtx->instance, nullptr);
     });
 
     uint32_t availableExtensionCount = 0;
@@ -680,24 +720,25 @@ void Application::setupDebugMessenger()
     VkDebugUtilsMessengerCreateInfoEXT createInfo{};
     populateDebugMessengerCreateInfo(createInfo);
 
-    H_CHECK(CreateDebugUtilsMessengerEXT(mCtx.instance, &createInfo, nullptr, &mCtx.debugMessenger),
-            "Failed to setup debug messenger");
+    H_CHECK(
+        CreateDebugUtilsMessengerEXT(mCtx->instance, &createInfo, nullptr, &mCtx->debugMessenger),
+        "Failed to setup debug messenger");
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying debug messenger");
-        DestroyDebugUtilsMessengerEXT(mCtx.instance, mCtx.debugMessenger, nullptr);
+        DestroyDebugUtilsMessengerEXT(mCtx->instance, mCtx->debugMessenger, nullptr);
     });
 }
 
 void Application::createSurface()
 {
     H_LOG("...creating window surface");
-    H_CHECK(glfwCreateWindowSurface(mCtx.instance, mWindow, nullptr, &mCtx.surface),
+    H_CHECK(glfwCreateWindowSurface(mCtx->instance, mWindow, nullptr, &mCtx->surface),
             "Failed to create window surface");
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying window surface");
-        vkDestroySurfaceKHR(mCtx.instance, mCtx.surface, nullptr);
+        vkDestroySurfaceKHR(mCtx->instance, mCtx->surface, nullptr);
     });
 }
 
@@ -765,33 +806,33 @@ bool Application::isDeviceSuitable(const VkPhysicalDevice &device, const VkSurfa
 
 void Application::pickPhysicalDevice()
 {
-    H_LOG("...picking physical device");
+    H_LOG("...selecting physical device");
     uint32_t candidateDeviceCount = 0;
-    vkEnumeratePhysicalDevices(mCtx.instance, &candidateDeviceCount, nullptr);
+    vkEnumeratePhysicalDevices(mCtx->instance, &candidateDeviceCount, nullptr);
     H_ASSERT(candidateDeviceCount > 0, "Failed to find GPUs with Vulkan support");
     std::vector<VkPhysicalDevice> candidateDevices(candidateDeviceCount);
-    vkEnumeratePhysicalDevices(mCtx.instance, &candidateDeviceCount, candidateDevices.data());
+    vkEnumeratePhysicalDevices(mCtx->instance, &candidateDeviceCount, candidateDevices.data());
 
     for (const auto &candidate : candidateDevices)
     {
-        if (isDeviceSuitable(candidate, mCtx.surface))
+        if (isDeviceSuitable(candidate, mCtx->surface))
         {
-            mCtx.physicalDevice = candidate;
+            mCtx->physicalDevice = candidate;
             break;
         }
     }
 
-    H_ASSERT(mCtx.physicalDevice != VK_NULL_HANDLE, "Failed to find a suitable GPU");
+    H_ASSERT(mCtx->physicalDevice != VK_NULL_HANDLE, "Failed to find a suitable GPU");
 
-    vkGetPhysicalDeviceProperties(mCtx.physicalDevice, &mCtx.gpuProperties);
+    vkGetPhysicalDeviceProperties(mCtx->physicalDevice, &mCtx->gpuProperties);
 
-    H_LOG(std::string("...selected physical device ") + mCtx.gpuProperties.deviceName);
+    H_LOG(std::string("...selected physical device ") + mCtx->gpuProperties.deviceName);
 }
 
 void Application::createLogicalDevice()
 {
     H_LOG("...creating logical device");
-    QueueFamilyIndices indices = findQueueFamilies(mCtx.physicalDevice, mCtx.surface);
+    QueueFamilyIndices indices = findQueueFamilies(mCtx->physicalDevice, mCtx->surface);
 
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos{};
     std::set<uint32_t> uniqueQueueFamilies = {*indices.graphicsFamily, *indices.presentFamily};
@@ -816,8 +857,13 @@ void Application::createLogicalDevice()
     createInfo.queueCreateInfoCount = queueCreateInfos.size();
     createInfo.pEnabledFeatures     = &deviceFeatures;
 
-    createInfo.enabledExtensionCount   = static_cast<uint32_t>(kDeviceExtensions.size());
-    createInfo.ppEnabledExtensionNames = kDeviceExtensions.data();
+    std::vector<const char *> deviceExtensionList;
+    for (const auto &extension : mRequirements.deviceExtensions)
+    {
+        deviceExtensionList.push_back(extension.c_str());
+    }
+    createInfo.enabledExtensionCount   = static_cast<uint32_t>(deviceExtensionList.size());
+    createInfo.ppEnabledExtensionNames = deviceExtensionList.data();
 
     VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures;
     dynamicRenderingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
@@ -836,24 +882,24 @@ void Application::createLogicalDevice()
         createInfo.ppEnabledLayerNames = kValidationLayers.data();
     }
 
-    H_CHECK(vkCreateDevice(mCtx.physicalDevice, &createInfo, nullptr, &mCtx.device),
+    H_CHECK(vkCreateDevice(mCtx->physicalDevice, &createInfo, nullptr, &mCtx->device),
             "Unable to create logical device");
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying logical device");
-        vkDestroyDevice(mCtx.device, nullptr);
+        vkDestroyDevice(mCtx->device, nullptr);
     });
 
-    vkGetDeviceQueue(mCtx.device, *indices.graphicsFamily, 0, &mGraphicsQueue);
+    vkGetDeviceQueue(mCtx->device, *indices.graphicsFamily, 0, &mGraphicsQueue);
     mGraphicsQueueIndex = *indices.graphicsFamily;
-    vkGetDeviceQueue(mCtx.device, *indices.presentFamily, 0, &mPresentQueue);
+    vkGetDeviceQueue(mCtx->device, *indices.presentFamily, 0, &mPresentQueue);
 }
 
 void Application::createSwapchain()
 {
     H_LOG("...creating swapchain");
     SwapchainSupportDetails swapchainSupport =
-        querySwapchainSupport(mCtx.physicalDevice, mCtx.surface);
+        querySwapchainSupport(mCtx->physicalDevice, mCtx->surface);
 
     const VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapchainSupport.formats);
     const VkPresentModeKHR presentMode     = chooseSwapPresentMode(swapchainSupport.presentModes);
@@ -867,15 +913,15 @@ void Application::createSwapchain()
 
     VkSwapchainCreateInfoKHR createInfo{};
     createInfo.sType            = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    createInfo.surface          = mCtx.surface;
+    createInfo.surface          = mCtx->surface;
     createInfo.minImageCount    = imageCount;
     createInfo.imageFormat      = surfaceFormat.format;
     createInfo.imageColorSpace  = surfaceFormat.colorSpace;
     createInfo.imageExtent      = extent;
     createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage       = swapchainImageUsage();
+    createInfo.imageUsage       = mRequirements.swapchainImageUsage;
 
-    const QueueFamilyIndices indices = findQueueFamilies(mCtx.physicalDevice, mCtx.surface);
+    const QueueFamilyIndices indices = findQueueFamilies(mCtx->physicalDevice, mCtx->surface);
     std::array<uint32_t, 2> queueFamilyIndices = {indices.graphicsFamily.value(),
                                                   indices.presentFamily.value()};
 
@@ -896,15 +942,15 @@ void Application::createSwapchain()
     createInfo.clipped        = VK_TRUE;
     createInfo.oldSwapchain   = VK_NULL_HANDLE;
 
-    H_CHECK(vkCreateSwapchainKHR(mCtx.device, &createInfo, nullptr, &mCtx.swapchain),
+    H_CHECK(vkCreateSwapchainKHR(mCtx->device, &createInfo, nullptr, &mCtx->swapchain),
             "Failed to create swapchain");
 
-    vkGetSwapchainImagesKHR(mCtx.device, mCtx.swapchain, &imageCount, nullptr);
+    vkGetSwapchainImagesKHR(mCtx->device, mCtx->swapchain, &imageCount, nullptr);
     mSwapchainImages.resize(imageCount);
-    vkGetSwapchainImagesKHR(mCtx.device, mCtx.swapchain, &imageCount, mSwapchainImages.data());
+    vkGetSwapchainImagesKHR(mCtx->device, mCtx->swapchain, &imageCount, mSwapchainImages.data());
 
-    mCtx.swapchainImageFormat = surfaceFormat.format;
-    mCtx.swapchainExtent      = extent;
+    mCtx->swapchainImageFormat = surfaceFormat.format;
+    mCtx->swapchainExtent      = extent;
 }
 
 void Application::createSwapchainImageViews()
@@ -915,12 +961,12 @@ void Application::createSwapchainImageViews()
     for (size_t i = 0; i < mSwapchainImages.size(); ++i)
     {
         VkImageViewCreateInfo createInfo = vk::imageViewInfo(
-            mCtx.swapchainImageFormat, mSwapchainImages[i], VK_IMAGE_ASPECT_COLOR_BIT);
+            mCtx->swapchainImageFormat, mSwapchainImages[i], VK_IMAGE_ASPECT_COLOR_BIT);
         createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        H_CHECK(vkCreateImageView(mCtx.device, &createInfo, nullptr, &mSwapchainImageViews[i]),
+        H_CHECK(vkCreateImageView(mCtx->device, &createInfo, nullptr, &mSwapchainImageViews[i]),
                 "Failed to create swapchain image view");
     }
 }
@@ -928,16 +974,16 @@ void Application::createSwapchainImageViews()
 void Application::createCommandPool()
 {
     H_LOG("...creating command pool");
-    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(mCtx.physicalDevice, mCtx.surface);
+    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(mCtx->physicalDevice, mCtx->surface);
 
     VkCommandPoolCreateInfo poolInfo = vk::commandPoolInfo(
         *queueFamilyIndices.graphicsFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-    H_CHECK(vkCreateCommandPool(mCtx.device, &poolInfo, nullptr, &mCommandPool),
+    H_CHECK(vkCreateCommandPool(mCtx->device, &poolInfo, nullptr, &mCommandPool),
             "Failed to create command pool");
 
     mDeleter.enqueue([this]() {
         H_LOG("...destroying command pool");
-        vkDestroyCommandPool(mCtx.device, mCommandPool, nullptr);
+        vkDestroyCommandPool(mCtx->device, mCommandPool, nullptr);
     });
 }
 
@@ -948,7 +994,7 @@ void Application::createCommandBuffers()
 
     VkCommandBufferAllocateInfo allocInfo =
         vk::commandBufferAllocInfo(mCommandPool, static_cast<uint32_t>(commandBuffers.size()));
-    H_CHECK(vkAllocateCommandBuffers(mCtx.device, &allocInfo, commandBuffers.data()),
+    H_CHECK(vkAllocateCommandBuffers(mCtx->device, &allocInfo, commandBuffers.data()),
             "Failed to allocate command buffer");
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
@@ -962,7 +1008,7 @@ void Application::createTracyContexts()
     H_LOG("...creating Tracy contexts");
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
-        mDrawCtxs[i].tracyCtx = TracyVkContext(mCtx.physicalDevice, mCtx.device, mGraphicsQueue,
+        mDrawCtxs[i].tracyCtx = TracyVkContext(mCtx->physicalDevice, mCtx->device, mGraphicsQueue,
                                                mDrawCtxs[i].commandBuffer);
     }
 
@@ -983,13 +1029,13 @@ void Application::createSyncObjects()
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i)
     {
-        H_CHECK(vkCreateSemaphore(mCtx.device, &semaphoreCreateInfo, nullptr,
+        H_CHECK(vkCreateSemaphore(mCtx->device, &semaphoreCreateInfo, nullptr,
                                   &mDrawCtxs[i].imageAvailableSemaphore),
                 "Failed to create sync object");
-        H_CHECK(vkCreateSemaphore(mCtx.device, &semaphoreCreateInfo, nullptr,
+        H_CHECK(vkCreateSemaphore(mCtx->device, &semaphoreCreateInfo, nullptr,
                                   &mDrawCtxs[i].renderFinishedSemaphore),
                 "Failed to create sync object");
-        H_CHECK(vkCreateFence(mCtx.device, &fenceCreateInfo, nullptr, &mDrawCtxs[i].inFlightFence),
+        H_CHECK(vkCreateFence(mCtx->device, &fenceCreateInfo, nullptr, &mDrawCtxs[i].inFlightFence),
                 "Failed to create sync object");
     }
 
@@ -997,9 +1043,9 @@ void Application::createSyncObjects()
         H_LOG("...destroying frame sync objects");
         for (size_t i = 0; i < kMaxFramesInFlight; ++i)
         {
-            vkDestroySemaphore(mCtx.device, mDrawCtxs[i].imageAvailableSemaphore, nullptr);
-            vkDestroySemaphore(mCtx.device, mDrawCtxs[i].renderFinishedSemaphore, nullptr);
-            vkDestroyFence(mCtx.device, mDrawCtxs[i].inFlightFence, nullptr);
+            vkDestroySemaphore(mCtx->device, mDrawCtxs[i].imageAvailableSemaphore, nullptr);
+            vkDestroySemaphore(mCtx->device, mDrawCtxs[i].renderFinishedSemaphore, nullptr);
+            vkDestroyFence(mCtx->device, mDrawCtxs[i].inFlightFence, nullptr);
         }
     });
 }
@@ -1009,15 +1055,15 @@ void Application::cleanupSwapchain()
     H_LOG("...destroying swapchain");
     for (const auto framebuffer : mSwapchainFramebuffers)
     {
-        vkDestroyFramebuffer(mCtx.device, framebuffer, nullptr);
+        vkDestroyFramebuffer(mCtx->device, framebuffer, nullptr);
     }
 
     for (const auto imageView : mSwapchainImageViews)
     {
-        vkDestroyImageView(mCtx.device, imageView, nullptr);
+        vkDestroyImageView(mCtx->device, imageView, nullptr);
     }
 
-    vkDestroySwapchainKHR(mCtx.device, mCtx.swapchain, nullptr);
+    vkDestroySwapchainKHR(mCtx->device, mCtx->swapchain, nullptr);
 }
 
 void Application::recreateSwapchain()
@@ -1029,7 +1075,7 @@ void Application::recreateSwapchain()
         glfwGetFramebufferSize(mWindow, &width, &height);
         glfwWaitEvents();
     }
-    vkDeviceWaitIdle(mCtx.device);
+    vkDeviceWaitIdle(mCtx->device);
 
     cleanupSwapchain();
 
@@ -1041,7 +1087,7 @@ Application::~Application()
 {
     H_LOG("Destroying Application...");
     H_LOG("...waiting for device to be idle");
-    vkDeviceWaitIdle(mCtx.device);
+    vkDeviceWaitIdle(mCtx->device);
 
     mDeleter.flush();
 }

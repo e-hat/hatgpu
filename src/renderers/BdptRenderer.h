@@ -3,7 +3,8 @@
 #include <vulkan/vulkan_core.h>
 #include "hatpch.h"
 
-#include "application/Application.h"
+#include "application/Constants.h"
+#include "application/Layer.h"
 #include "geometry/Model.h"
 #include "scene/Camera.h"
 #include "scene/Scene.h"
@@ -16,50 +17,25 @@
 #include <glm/glm.hpp>
 
 #include <iostream>
-#include <memory>
-#include <optional>
-#include <string>
-#include <unordered_map>
-#include <vector>
 
 namespace hatgpu
 {
 
-class BdptRenderer : public Application
+class BdptRenderer : public Layer
 {
   public:
-    BdptRenderer();
-    ~BdptRenderer() override;
+    BdptRenderer(std::shared_ptr<vk::Ctx> ctx, std::shared_ptr<Scene> scene);
 
-    void Init() override;
-    void Exit() override;
-
-    void OnRender() override;
+    void OnAttach() override;
+    void OnDetach() override;
+    void OnRender(DrawCtx &drawCtx) override;
     void OnImGuiRender() override;
 
-  protected:
-    bool checkDeviceExtensionSupport(const VkPhysicalDevice &device) override;
-    inline constexpr virtual VkImageUsageFlags swapchainImageUsage() const override
-    {
-        return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    }
-
-    inline constexpr virtual VkSubpassDependency renderSubpassDependency() const override
-    {
-        VkSubpassDependency dependency{};
-        dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
-        dependency.dstSubpass    = 0;
-        dependency.srcStageMask  = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        dependency.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        dependency.dstStageMask  = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
-
-        return dependency;
-    }
+    static const LayerRequirements kRequirements;
 
   private:
-    void draw();
-    void recordCommandBuffer();
+    void draw(DrawCtx &drawCtx);
+    void recordCommandBuffer(DrawCtx &drawCtx);
 
     void createDescriptorPool();
     void createDescriptorLayout();
@@ -74,7 +50,7 @@ class BdptRenderer : public Application
 
     vk::Allocator mAllocator;
 
-    void transferCanvasToSwapchain();
+    void transferCanvasToSwapchain(DrawCtx &drawCtx);
 
     VkDescriptorPool mDescriptorPool;
     struct FrameData
@@ -83,11 +59,9 @@ class BdptRenderer : public Application
         vk::GpuTexture canvasImage;
         vk::AllocatedBuffer rayGenConstantsBuffer;
     };
-    std::array<FrameData, kMaxFramesInFlight> mFrames;
+    std::array<FrameData, constants::kMaxFramesInFlight> mFrames;
 
     size_t mFrameCount{0};
-
-    vk::DeletionQueue mDeleter;
 };
 
 }  // namespace hatgpu

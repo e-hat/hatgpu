@@ -15,14 +15,16 @@ struct DrawCtx
     VkSemaphore renderFinishedSemaphore;
     VkFence inFlightFence;
     TracyVkCtx tracyCtx;
-    vk::Ctx vk;
+    std::shared_ptr<vk::Ctx> vk;
     VkImageView swapchainImageView;
     VkImage swapchainImage;
+    VkImageView depthImageView;
+
+    uint32_t frameIndex;
 };
 
 // Tracy helpers
-#define VkZoneC(name, color) \
-    TracyVkZoneC(mCurrentDrawCtx->tracyCtx, mCurrentDrawCtx->commandBuffer, name, color)
+#define VkZoneC(name, color) TracyVkZoneC(drawCtx.tracyCtx, drawCtx.commandBuffer, name, color)
 }  // namespace hatgpu
 
 #endif

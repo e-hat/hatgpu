@@ -1,7 +1,9 @@
 #ifndef _INCLUDE_AABBLAYER_H
 #define _INCLUDE_AABBLAYER_H
-#include "application/DrawCtx.h"
 #include "hatpch.h"
+
+#include "application/DrawCtx.h"
+#include "scene/Scene.h"
 
 #include "application/Layer.h"
 #include "vk/ctx.h"
@@ -13,12 +15,16 @@ namespace hatgpu
 class AabbLayer : public Layer
 {
   public:
-    AabbLayer() : Layer("AabbLayer") {}
+    AabbLayer(std::shared_ptr<vk::Ctx> ctx, std::shared_ptr<Scene> scene)
+        : Layer("AabbLayer", ctx, scene)
+    {}
 
-    void OnAttach(vk::Ctx &ctx, vk::DeletionQueue &deleter) override;
-    void OnDetach(vk::Ctx &ctx) override;
+    void OnAttach() override;
+    void OnDetach() override;
     void OnRender(DrawCtx &drawCtx) override;
     void OnImGuiRender() override;
+
+    const static LayerRequirements kRequirements;
 
   private:
     VkPipelineLayout mLayout;

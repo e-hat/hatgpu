@@ -35,7 +35,7 @@ void from_json(const json &j, DirLight &d)
     j.at("color").get_to(d.color);
 }
 
-void Scene::loadFromJson(const std::string &path, hatgpu::TextureManager &textureManager)
+void Scene::loadFromJson(const std::string &path)
 {
     std::ifstream inputFile(path);
     H_ASSERT(inputFile.is_open(), "Failed to open input JSON file");

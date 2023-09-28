@@ -3,6 +3,8 @@
 #include "hatpch.h"
 
 #include "geometry/Model.h"
+#include "scene/Camera.h"
+#include "texture/Texture.h"
 
 #include <glm/glm.hpp>
 
@@ -35,7 +37,10 @@ struct Scene
     std::vector<PointLight> pointLights;
     DirLight dirLight;
 
-    void loadFromJson(const std::string &path, TextureManager &textureManager);
+    Camera camera;
+    TextureManager textureManager;
+
+    void loadFromJson(const std::string &path);
 };
 }  // namespace hatgpu
 

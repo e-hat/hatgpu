@@ -3,6 +3,9 @@
 #include <vulkan/vulkan_core.h>
 #include "application/DrawCtx.h"
 #include "hatpch.h"
+#include "renderers/BdptRenderer.h"
+#include "renderers/ForwardRenderer.h"
+#include "renderers/layers/AabbLayer.h"
 
 #include "Layer.h"
 #include "application/InputManager.h"
@@ -12,31 +15,26 @@
 #include "vk/deleter.h"
 #include "vk/upload_context.h"
 
-#include <algorithm>
 #include <tracy/TracyVulkan.hpp>
 
 #include <deque>
 #include <functional>
-#include <optional>
-#include <string>
-#include <vector>
 
 namespace hatgpu
 {
 class Application
 {
   public:
-    Application(const std::string &windowName);
+    Application(const std::string &windowName, const std::string &scenePath);
     virtual ~Application();
 
     Application(const Application &other)            = delete;
     Application &operator=(const Application &other) = delete;
 
-    virtual void Init();
-    virtual void Exit() = 0;
+    void Init();
 
-    virtual void OnRender()      = 0;
-    virtual void OnImGuiRender() = 0;
+    void OnRender();
+    void OnImGuiRender();
 
     void Run();
 
@@ -44,75 +42,61 @@ class Application
 
     static constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
 
-  protected:
-    LayerStack mLayers;
-
-    vk::Allocator mAllocator;
-
-    VkImageView mDepthImageView;
-    vk::AllocatedImage mDepthImage{};
-
-    virtual void createDepthImage();
-    virtual bool checkDeviceExtensionSupport(const VkPhysicalDevice &device);
-    virtual VkImageUsageFlags swapchainImageUsage() const = 0;
-
-    inline constexpr virtual VkSubpassDependency renderSubpassDependency() const
-    {
-
-        VkSubpassDependency dependency{};
-        dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
-        dependency.dstSubpass    = 0;
-        dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.srcAccessMask = 0;
-        dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-        return dependency;
-    }
-
-    void immediateSubmit(std::function<void(VkCommandBuffer)> &&function);
-
-    void PushLayer(std::shared_ptr<Layer> layer)
-    {
-        layer->OnAttach(mCtx, mDeleter);
-        mLayers.PushLayer(std::move(layer));
-    }
-    void PushOverlay(std::shared_ptr<Layer> layer)
-    {
-        layer->OnAttach(mCtx, mDeleter);
-        mLayers.PushOverlay(std::move(layer));
-    }
-    void PopLayer(std::shared_ptr<Layer> layer)
-    {
-        layer->OnDetach(mCtx);
-        mLayers.PopLayer(std::move(layer));
-    }
-    void PopOverlay(std::shared_ptr<Layer> layer)
-    {
-        layer->OnDetach(mCtx);
-        mLayers.PopOverlay(std::move(layer));
-    }
-
-    vk::UploadContext mUploadContext;
-
     // We are setting this to 1 since we will possibly have lots
     // of data on the GPU at once for path tracing. Seem to be easily changed
     // either way -- the path tracer will be implemented agnostic of this.
     static constexpr size_t kMaxFramesInFlight = 1;
 
+  protected:
+    LayerStack mLayerStack;
+    std::vector<std::shared_ptr<Layer>> mLayers;
+    std::shared_ptr<ForwardRenderer> mForwardRenderer;
+    std::shared_ptr<BdptRenderer> mBdptRenderer;
+    std::shared_ptr<AabbLayer> mAabbLayer;
+
+    LayerRequirements mRequirements;
+
+    void createDepthImage();
+    bool checkDeviceExtensionSupport(const VkPhysicalDevice &device);
+
+    void immediateSubmit(std::function<void(VkCommandBuffer)> &&function);
+
+    void PushLayer(std::shared_ptr<Layer> layer)
+    {
+        layer->OnAttach();
+        mLayerStack.PushLayer(std::move(layer));
+    }
+    void PushOverlay(std::shared_ptr<Layer> layer)
+    {
+        layer->OnAttach();
+        mLayerStack.PushOverlay(std::move(layer));
+    }
+    void PopLayer(std::shared_ptr<Layer> layer)
+    {
+        layer->OnDetach();
+        mLayerStack.PopLayer(std::move(layer));
+    }
+    void PopOverlay(std::shared_ptr<Layer> layer)
+    {
+        layer->OnDetach();
+        mLayerStack.PopOverlay(std::move(layer));
+    }
+
     GLFWwindow *mWindow;
     std::string mWindowName;
     InputManager mInputManager;
     Time mTime;
-    Camera mCamera;
-    std::vector<VkImageView> mSwapchainImageViews;
 
-    vk::Ctx mCtx;
+    std::shared_ptr<vk::Ctx> mCtx;
+    std::shared_ptr<Scene> mScene;
 
     uint32_t mCurrentImageIndex;
     VkImage mCurrentSwapchainImage = VK_NULL_HANDLE;
+    std::vector<VkImageView> mSwapchainImageViews;
     std::vector<VkImage> mSwapchainImages;
     std::vector<VkFramebuffer> mSwapchainFramebuffers;
+    VkImageView mDepthImageView;
+    vk::AllocatedImage mDepthImage{};
 
     struct QueueFamilyIndices
     {

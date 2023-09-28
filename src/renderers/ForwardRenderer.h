@@ -1,8 +1,10 @@
 #ifndef _INCLUDE_FORWARDRENDERER_H
 #define _INCLUDE_FORWARDRENDERER_H
+#include <vulkan/vulkan_core.h>
+#include "application/Layer.h"
 #include "hatpch.h"
 
-#include "application/Application.h"
+#include "application/Constants.h"
 #include "geometry/Model.h"
 #include "renderers/layers/AabbLayer.h"
 #include "scene/Camera.h"
@@ -17,41 +19,29 @@
 #include <glm/glm.hpp>
 
 #include <iostream>
-#include <memory>
-#include <optional>
-#include <string>
-#include <unordered_map>
-#include <vector>
 
 namespace hatgpu
 {
 
-class ForwardRenderer : public Application
+class ForwardRenderer : public Layer
 {
   public:
-    ForwardRenderer(const std::string &scenePath);
-    ~ForwardRenderer() override;
+    ForwardRenderer(std::shared_ptr<vk::Ctx> ctx, std::shared_ptr<Scene> scene);
 
-    void Init() override;
-    void Exit() override;
-
-    void OnRender() override;
+    void OnAttach() override;
+    void OnDetach() override;
+    void OnRender(DrawCtx &drawCtx) override;
     void OnImGuiRender() override;
 
-  protected:
-    virtual VkImageUsageFlags swapchainImageUsage() const override
-    {
-        return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    }
+    static const LayerRequirements kRequirements;
 
   private:
     void createDescriptors();
     void createGraphicsPipeline();
-    void loadSceneFromDisk();
     void uploadSceneToGpu();
 
-    void drawObjects();
-    void recordCommandBuffer();
+    void drawObjects(DrawCtx &drawCtx);
+    void recordCommandBuffer(DrawCtx &drawCtx);
 
     void uploadTextures(Mesh &mesh);
 
@@ -70,9 +60,7 @@ class ForwardRenderer : public Application
         vk::AllocatedBuffer dirLightBuffer;
         vk::AllocatedBuffer lightBuffer;
     };
-    std::array<FrameData, kMaxFramesInFlight> mFrames;
-
-    ui::Toggle mAabbLayerToggle;
+    std::array<FrameData, constants::kMaxFramesInFlight> mFrames;
 
     TextureManager mTextureManager;
     std::unordered_map<std::string, vk::GpuTexture> mGpuTextures;
@@ -80,11 +68,6 @@ class ForwardRenderer : public Application
     uint32_t mFrameCount{0};
 
     std::string mScenePath;
-    Scene mScene;
-
-    vk::DeletionQueue mDeleter;
-
-    std::shared_ptr<AabbLayer> mAabbLayer;
 };
 
 }  // namespace hatgpu

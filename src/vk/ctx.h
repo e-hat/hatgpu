@@ -2,7 +2,9 @@
 #define _INCLUDE_CTX_H
 #include "hatpch.h"
 
+#include "allocator.h"
 #include "deleter.h"
+#include "upload_context.h"
 
 namespace hatgpu
 {
@@ -19,6 +21,9 @@ struct Ctx
     VkSwapchainKHR swapchain;
     VkFormat swapchainImageFormat;
     VkExtent2D swapchainExtent;
+
+    vk::Allocator allocator;
+    vk::UploadContext uploadContext;
 };
 }  // namespace vk
 }  // namespace hatgpu

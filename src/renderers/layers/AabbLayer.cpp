@@ -20,7 +20,10 @@ struct PushConstants
 };
 }  // namespace
 
-void AabbLayer::OnAttach(vk::Ctx &ctx, vk::DeletionQueue &deleter)
+const LayerRequirements AabbLayer::kRequirements = {VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                                                    {VK_KHR_SWAPCHAIN_EXTENSION_NAME}};
+
+void AabbLayer::OnAttach()
 {
     H_LOG("Attaching AabbLayer");
 
@@ -32,7 +35,7 @@ void AabbLayer::OnAttach(vk::Ctx &ctx, vk::DeletionQueue &deleter)
 
     H_LOG("...creating draw pipeline");
     VkPipelineShaderStageCreateInfo vertexStageInfo =
-        vk::createShaderStage(ctx.device, kVertexShaderName, VK_SHADER_STAGE_VERTEX_BIT);
+        vk::createShaderStage(mCtx->device, kVertexShaderName, VK_SHADER_STAGE_VERTEX_BIT);
 
     VkVertexInputBindingDescription bindingDescription{};
     bindingDescription.binding   = 0;
@@ -56,14 +59,14 @@ void AabbLayer::OnAttach(vk::Ctx &ctx, vk::DeletionQueue &deleter)
     VkViewport viewport{};
     viewport.x        = 0.0f;
     viewport.y        = 0.0f;
-    viewport.width    = static_cast<float>(ctx.swapchainExtent.width);
-    viewport.height   = static_cast<float>(ctx.swapchainExtent.height);
+    viewport.width    = static_cast<float>(mCtx->swapchainExtent.width);
+    viewport.height   = static_cast<float>(mCtx->swapchainExtent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
     VkRect2D scissor{};
     scissor.offset = {0, 0};
-    scissor.extent = ctx.swapchainExtent;
+    scissor.extent = mCtx->swapchainExtent;
 
     auto viewportState = vk::viewportStateInfo(&viewport, &scissor);
 
@@ -95,7 +98,7 @@ void AabbLayer::OnAttach(vk::Ctx &ctx, vk::DeletionQueue &deleter)
     layoutInfo.setLayoutCount             = 0;
     layoutInfo.pSetLayouts                = nullptr;
 
-    H_CHECK(vkCreatePipelineLayout(ctx.device, &layoutInfo, nullptr, &mLayout),
+    H_CHECK(vkCreatePipelineLayout(mCtx->device, &layoutInfo, nullptr, &mLayout),
             "Failed to create pipeline layout");
 
     std::array<VkDynamicState, 2> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
@@ -127,31 +130,31 @@ void AabbLayer::OnAttach(vk::Ctx &ctx, vk::DeletionQueue &deleter)
     pipelineCreateRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
     pipelineCreateRenderingInfo.pNext = nullptr;
     pipelineCreateRenderingInfo.colorAttachmentCount    = 1;
-    pipelineCreateRenderingInfo.pColorAttachmentFormats = &ctx.swapchainImageFormat;
+    pipelineCreateRenderingInfo.pColorAttachmentFormats = &mCtx->swapchainImageFormat;
     pipelineCreateRenderingInfo.depthAttachmentFormat   = VK_FORMAT_D32_SFLOAT;
 
     pipelineInfo.pNext = &pipelineCreateRenderingInfo;
 
-    H_CHECK(vkCreateGraphicsPipelines(ctx.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
+    H_CHECK(vkCreateGraphicsPipelines(mCtx->device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
                                       &mPipeline),
             "Failed to create graphics pipeline");
 
-    deleter.enqueue([this, ctx]() {
+    mDeleter.enqueue([this]() {
         H_LOG("Destroying AabbLayer");
 
         H_LOG("...destroying pipeline layout object");
-        vkDestroyPipelineLayout(ctx.device, mLayout, nullptr);
+        vkDestroyPipelineLayout(mCtx->device, mLayout, nullptr);
 
         H_LOG("...destroying graphics pipeline");
-        vkDestroyPipeline(ctx.device, mPipeline, nullptr);
+        vkDestroyPipeline(mCtx->device, mPipeline, nullptr);
     });
 
-    vkDestroyShaderModule(ctx.device, vertexStageInfo.module, nullptr);
+    vkDestroyShaderModule(mCtx->device, vertexStageInfo.module, nullptr);
 
     mInitialized = true;
 }
 
-void AabbLayer::OnDetach([[maybe_unused]] vk::Ctx &ctx)
+void AabbLayer::OnDetach()
 {
     H_LOG("Detaching AabbLayer");
     H_LOG("...nothing to do");
