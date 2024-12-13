@@ -70,7 +70,8 @@ set(INCLUDES ${INCLUDES}
         ${DEPS}/VulkanMemoryAllocator/include
         ${DEPS}/tracy/public
         ${DEPS}/json/include
-        ${DEPS}/spdlog/include)
+        ${DEPS}/spdlog/include
+        ${DEPS}/abseil-cpp)
 target_include_directories(hatgpu PRIVATE ${INCLUDES})
 
 # We need to configure these options, else Assimp with build 
@@ -108,6 +109,10 @@ target_link_libraries(hatgpu PRIVATE spdlog::spdlog_header_only)
 set(JSON_BuildTests OFF CACHE INTERNAL "")
 add_subdirectory(deps/json)
 target_link_libraries(hatgpu PRIVATE nlohmann_json::nlohmann_json)
+
+# Using for gflags for now
+add_subdirectory(deps/abseil-cpp)
+target_link_libraries(hatgpu PRIVATE absl::flags absl::flags_parse)
 
 find_package(Vulkan REQUIRED)
 target_link_libraries(hatgpu PRIVATE ${Vulkan_LIBRARIES})

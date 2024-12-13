@@ -27,3 +27,6 @@
 [submodule "deps/spdlog"]
 	path = deps/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "deps/abseil-cpp"]
+	path = deps/abseil-cpp
+	url = https://github.com/abseil/abseil-cpp.git
