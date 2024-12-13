@@ -19,6 +19,7 @@ struct DrawCtx
     VkImageView swapchainImageView;
     VkImage swapchainImage;
     VkImageView depthImageView;
+    VkImage depthImage;
 
     uint32_t frameIndex;
 };

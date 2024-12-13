@@ -27,6 +27,7 @@ const LayerRequirements AabbLayer::kRequirements = []() -> LayerRequirements {
         {VK_KHR_SWAPCHAIN_EXTENSION_NAME},
     };
     result.deviceFeatures.fillModeNonSolid = VK_TRUE;
+    result.deviceFeatures.geometryShader   = VK_TRUE;
     return result;
 }();
 
@@ -81,7 +82,7 @@ void AabbLayer::Init()
     VkPipelineMultisampleStateCreateInfo multisampling = vk::multisampleInfo();
 
     VkPipelineDepthStencilStateCreateInfo depthStencilStateCreateInfo =
-        vk::pipelineDepthStencilInfo(false, false, VK_COMPARE_OP_ALWAYS);
+        vk::pipelineDepthStencilInfo(true, false, VK_COMPARE_OP_LESS);
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment = vk::colorBlendAttachmentState();
     colorBlendAttachment.blendEnable                         = VK_FALSE;
@@ -304,6 +305,16 @@ void AabbLayer::OnRender(DrawCtx &drawCtx)
         colorAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
         colorAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
 
+        VkRenderingAttachmentInfo depthAttachment{};
+        depthAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depthAttachment.imageView   = drawCtx.depthImageView;
+        depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        depthAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
+        depthAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+        VkClearValue depthClear{};
+        depthClear.depthStencil.depth = 1.0f;
+        depthAttachment.clearValue    = depthClear;
+
         VkRenderingInfo renderInfo{};
         renderInfo.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
         renderInfo.flags                = 0;
@@ -311,8 +322,38 @@ void AabbLayer::OnRender(DrawCtx &drawCtx)
         renderInfo.layerCount           = 1;
         renderInfo.colorAttachmentCount = 1;
         renderInfo.pColorAttachments    = &colorAttachment;
-        renderInfo.pDepthAttachment     = nullptr;
+        renderInfo.pDepthAttachment     = &depthAttachment;
 
+        {
+            VkZoneC("AabbLayer Wait for depth buffer", tracy::Color::Aqua);
+
+            VkImageMemoryBarrier barrier;
+            barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barrier.oldLayout           = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+            barrier.newLayout           = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image               = drawCtx.depthImage;
+            barrier.pNext               = VK_NULL_HANDLE;
+
+            barrier.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT;
+            barrier.subresourceRange.baseMipLevel   = 0;
+            barrier.subresourceRange.levelCount     = 1;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount     = 1;
+
+            barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+            barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+
+            vkCmdPipelineBarrier(drawCtx.commandBuffer,
+                                 VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                                     VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                                 VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                                     VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                                 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        }
         vkCmdBeginRendering(drawCtx.commandBuffer, &renderInfo);
         vkCmdBindPipeline(drawCtx.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipeline);
 

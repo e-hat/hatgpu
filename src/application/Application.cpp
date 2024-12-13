@@ -299,6 +299,7 @@ void Application::Init()
     {
         drawCtx.vk             = mCtx;
         drawCtx.depthImageView = mDepthImageView;
+        drawCtx.depthImage     = mDepthImage.image;
     }
 
     // Set up initial layer state
@@ -472,6 +473,35 @@ void Application::createDepthImage()
         vkDestroyImageView(mCtx->device, mDepthImageView, nullptr);
         vmaDestroyImage(mCtx->allocator.Impl, mDepthImage.image, mDepthImage.allocation);
     });
+
+    // Transition depth image to standardized layout
+    H_LOG("...transitioning depth image layout to VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL");
+    mCtx->uploadContext.immediateSubmit([this](VkCommandBuffer cmd) {
+        VkImageMemoryBarrier barrier;
+        barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout           = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image               = mDepthImage.image;
+        barrier.pNext               = VK_NULL_HANDLE;
+
+        barrier.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT;
+        barrier.subresourceRange.baseMipLevel   = 0;
+        barrier.subresourceRange.levelCount     = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount     = 1;
+
+        barrier.srcAccessMask = VK_ACCESS_NONE;
+        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+
+        vkCmdPipelineBarrier(
+            cmd,
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            0, 0, nullptr, 0, nullptr, 1, &barrier);
+    });
 }
 
 void Application::renderImGui(VkCommandBuffer commandBuffer)
@@ -519,6 +549,9 @@ void Application::renderImGui(VkCommandBuffer commandBuffer)
 
 void Application::OnImGuiRender()
 {
+    ImGui::SliderFloat3("Camera world coordinates", &mScene->camera.Position.x, -100.0f, 100.0f,
+                        "%.3f", 1.0f);
+
     int choice = static_cast<int>(mSelectedRendererOption);
     ImGui::RadioButton("Forward renderer", &choice,
                        static_cast<int>(RendererOption::kForwardRenderer));
@@ -640,7 +673,8 @@ void Application::Run()
         std::array<VkSemaphore, 1> waitSemaphores = {mCurrentDrawCtx->imageAvailableSemaphore};
         // TODO: collect this info from layers, we should be unaware of their implementation here
         std::array<VkPipelineStageFlags, 1> waitStages = {
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT};
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT |
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT};
         submitInfo.waitSemaphoreCount               = waitSemaphores.size();
         submitInfo.pWaitSemaphores                  = waitSemaphores.data();
         submitInfo.pWaitDstStageMask                = waitStages.data();
