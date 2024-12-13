@@ -1,5 +1,3 @@
-#include <vulkan/vulkan_core.h>
-#include "application/Layer.h"
 #include "hatpch.h"
 
 #include "ForwardRenderer.h"
@@ -55,7 +53,7 @@ static constexpr const char *kFragmentShaderName = "../shaders/bin/forward/shade
 }  // namespace
 
 ForwardRenderer::ForwardRenderer(std::shared_ptr<vk::Ctx> ctx, std::shared_ptr<Scene> scene)
-    : Layer("ForwardRenderer", ctx, scene)
+    : Renderer("ForwardRenderer", ctx, scene)
 {}
 
 const LayerRequirements ForwardRenderer::kRequirements = []() {
@@ -66,18 +64,11 @@ const LayerRequirements ForwardRenderer::kRequirements = []() {
     return result;
 }();
 
-void ForwardRenderer::OnAttach()
+void ForwardRenderer::Init()
 {
-    if (mInitialized)
-    {
-        return;
-    }
-
     createDescriptors();
     createGraphicsPipeline();
     uploadSceneToGpu();
-
-    mInitialized = true;
 }
 
 void ForwardRenderer::OnDetach() {}
@@ -90,7 +81,9 @@ void ForwardRenderer::OnRender(DrawCtx &drawCtx)
 
 void ForwardRenderer::OnImGuiRender()
 {
-    ImGui::Text("hi from forward renderer :3");
+    ImGui::Text("You are viewing the forward renderer.");
+    ImGui::Text("Move around with WASD, LSHIFT and LCTRL");
+    ImGui::Text("Look around with arrow keys. Zoom in/out with mouse wheel");
 }
 
 void ForwardRenderer::createDescriptors()
@@ -257,8 +250,7 @@ void ForwardRenderer::createGraphicsPipeline()
         static_cast<uint32_t>(attributeDescriptions.size());
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly =
-        vk::inputAssemblyInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly = vk::inputAssemblyInfo();
 
     VkViewport viewport{};
     viewport.x        = 0.0f;

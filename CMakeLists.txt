@@ -22,6 +22,7 @@ set(SOURCES ${SOURCES}
         ${SOURCE_DIR}/application/InputManager.cpp
         ${SOURCE_DIR}/application/Layer.h 
         ${SOURCE_DIR}/application/Layer.cpp
+        ${SOURCE_DIR}/application/Renderer.h 
         ${SOURCE_DIR}/renderers/ForwardRenderer.h
         ${SOURCE_DIR}/renderers/ForwardRenderer.cpp
         ${SOURCE_DIR}/renderers/BdptRenderer.h
@@ -54,8 +55,8 @@ set(SOURCES ${SOURCES}
         ${SOURCE_DIR}/geometry/prim/Quad.h
         ${SOURCE_DIR}/geometry/prim/Box.h
         ${SOURCE_DIR}/geometry/prim/Box.cpp 
-        ${SOURCE_DIR}/renderers/layers/AabbLayer.cpp 
-        ${SOURCE_DIR}/renderers/layers/AabbLayer.h
+        ${SOURCE_DIR}/renderers/overlays/AabbLayer.cpp 
+        ${SOURCE_DIR}/renderers/overlays/AabbLayer.h
         ${SOURCE_DIR}/ui/Toggle.h)
 add_executable(hatgpu ${SOURCES})
 

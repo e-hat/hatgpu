@@ -18,7 +18,21 @@ class Layer
         : mInitialized(false), mCtx(ctx), mScene(scene), mDebugName(debugName)
     {}
 
-    virtual void OnAttach()                 = 0;
+    void OnAttach()
+    {
+        H_LOG(std::format("Attaching layer '{}'", mDebugName));
+        if (!mInitialized)
+        {
+            Init();
+        }
+        else
+        {
+            H_LOG(std::format("...skipping repeated initialization"))
+        }
+
+        mInitialized = true;
+    }
+    virtual void Init()                     = 0;
     virtual void OnDetach()                 = 0;
     virtual void OnRender(DrawCtx &drawCtx) = 0;
     virtual void OnImGuiRender() {}
@@ -36,8 +50,6 @@ class Layer
     vk::DeletionQueue mDeleter;
     std::shared_ptr<vk::Ctx> mCtx;
     std::shared_ptr<Scene> mScene;
-
-  private:
     std::string mDebugName;
 };
 
@@ -71,6 +83,8 @@ struct LayerRequirements
     }
 };
 
+class Renderer;
+
 class LayerStack
 {
   public:
@@ -78,17 +92,19 @@ class LayerStack
 
     // Layers could probably be stored by value here, but I don't want to
     // put that restriction on future Layers since they could be complicated.
-    void PushLayer(std::shared_ptr<Layer> layer);
+    void SetRenderer(std::shared_ptr<Renderer> renderer);
     void PushOverlay(std::shared_ptr<Layer> layer);
-    void PopLayer(std::shared_ptr<Layer> layer);
     void PopOverlay(std::shared_ptr<Layer> layer);
+
+    // Either returns nullopt or a non-null shared_ptr<Renderer>
+    std::optional<std::shared_ptr<Renderer>> renderer();
 
     inline std::vector<std::shared_ptr<Layer>>::iterator begin() { return mLayers.begin(); }
     inline std::vector<std::shared_ptr<Layer>>::iterator end() { return mLayers.end(); }
 
   private:
     std::vector<std::shared_ptr<Layer>> mLayers;
-    uint32_t mLayerInsertIndex = 0;
+    uint32_t mOverlayInsertIndex = 0;
 };
 }  // namespace hatgpu
 

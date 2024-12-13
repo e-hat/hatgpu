@@ -4,7 +4,7 @@
 #include "hatpch.h"
 
 #include "application/Constants.h"
-#include "application/Layer.h"
+#include "application/Renderer.h"
 #include "geometry/Model.h"
 #include "scene/Camera.h"
 #include "scene/Scene.h"
@@ -21,12 +21,12 @@
 namespace hatgpu
 {
 
-class BdptRenderer : public Layer
+class BdptRenderer : public Renderer
 {
   public:
     BdptRenderer(std::shared_ptr<vk::Ctx> ctx, std::shared_ptr<Scene> scene);
 
-    void OnAttach() override;
+    void Init() override;
     void OnDetach() override;
     void OnRender(DrawCtx &drawCtx) override;
     void OnImGuiRender() override;
@@ -47,8 +47,6 @@ class BdptRenderer : public Layer
 
     VkPipelineLayout mBdptPipelineLayout;
     VkPipeline mBdptPipeline;
-
-    vk::Allocator mAllocator;
 
     void transferCanvasToSwapchain(DrawCtx &drawCtx);
 

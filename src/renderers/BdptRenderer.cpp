@@ -1,4 +1,3 @@
-#include "application/Layer.h"
 #include "hatpch.h"
 
 #include "BdptRenderer.h"
@@ -12,10 +11,8 @@
 #include <glm/gtx/string_cast.hpp>
 #include <tracy/Tracy.hpp>
 
-#include <array>
 #include <cstring>
 #include <fstream>
-#include <set>
 #include <stdexcept>
 
 namespace
@@ -62,7 +59,7 @@ namespace hatgpu
 {
 
 BdptRenderer::BdptRenderer(std::shared_ptr<vk::Ctx> ctx, std::shared_ptr<Scene> scene)
-    : Layer("HatGPU", ctx, scene)
+    : Renderer("BdptRenderer", ctx, scene)
 {}
 
 const LayerRequirements BdptRenderer::kRequirements = []() -> LayerRequirements {
@@ -71,23 +68,8 @@ const LayerRequirements BdptRenderer::kRequirements = []() -> LayerRequirements 
     return result;
 }();
 
-void BdptRenderer::OnAttach()
+void BdptRenderer::Init()
 {
-
-    H_LOG("Initializing bdpt renderer...");
-    VmaAllocatorCreateInfo allocatorInfo = {};
-    allocatorInfo.physicalDevice         = mCtx->physicalDevice;
-    allocatorInfo.device                 = mCtx->device;
-    allocatorInfo.instance               = mCtx->instance;
-
-    H_LOG("...creating VMA allocator");
-    mAllocator = vk::Allocator(allocatorInfo);
-
-    mDeleter.enqueue([this]() {
-        H_LOG("...destroying VMA allocator");
-        mAllocator.destroy();
-    });
-
     createDescriptorPool();
     createDescriptorLayout();
     createPipeline();
@@ -122,7 +104,7 @@ void BdptRenderer::createCanvas()
         frame.canvasImage.mipLevels = 1;
         vk::GpuTexture &img         = frame.canvasImage;
         imgAllocInfo.usage          = VMA_MEMORY_USAGE_GPU_ONLY;
-        vmaCreateImage(mAllocator.Impl, &imageInfo, &imgAllocInfo, &img.image.image,
+        vmaCreateImage(mCtx->allocator.Impl, &imageInfo, &imgAllocInfo, &img.image.image,
                        &img.image.allocation, nullptr);
 
         mCtx->uploadContext.immediateSubmit([&frame](VkCommandBuffer commandBuffer) {
@@ -160,7 +142,7 @@ void BdptRenderer::createCanvas()
         for (FrameData &frame : mFrames)
         {
             vkDestroyImageView(mCtx->device, frame.canvasImage.imageView, nullptr);
-            frame.canvasImage.destroy(mAllocator);
+            frame.canvasImage.destroy(mCtx->allocator);
         }
     });
 }
@@ -256,14 +238,14 @@ void BdptRenderer::createDescriptorSets()
             vk::writeDescriptorImage(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, mFrames[i].globalDescriptor,
                                      &canvasImageInfo, kCanvasBindingLocation);
 
-        mFrames[i].rayGenConstantsBuffer =
-            mAllocator.createBuffer(sizeof(GpuRayGenConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                    VMA_MEMORY_USAGE_CPU_TO_GPU);
+        mFrames[i].rayGenConstantsBuffer = mCtx->allocator.createBuffer(
+            sizeof(GpuRayGenConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VMA_MEMORY_USAGE_CPU_TO_GPU);
         // Writing raygen constant data
-        auto data =
-            static_cast<GpuRayGenConstants *>(mAllocator.map(mFrames[i].rayGenConstantsBuffer));
+        auto data = static_cast<GpuRayGenConstants *>(
+            mCtx->allocator.map(mFrames[i].rayGenConstantsBuffer));
         *data = gpuRayGenConstants;
-        mAllocator.unmap(mFrames[i].rayGenConstantsBuffer);
+        mCtx->allocator.unmap(mFrames[i].rayGenConstantsBuffer);
 
         VkDescriptorBufferInfo rayGenConstantsInfo{};
         rayGenConstantsInfo.buffer = mFrames[i].rayGenConstantsBuffer.buffer;
@@ -283,7 +265,7 @@ void BdptRenderer::createDescriptorSets()
         H_LOG("...deleting buffers");
         for (size_t i = 0; i < constants::kMaxFramesInFlight; ++i)
         {
-            mAllocator.destroyBuffer(mFrames[i].rayGenConstantsBuffer);
+            mCtx->allocator.destroyBuffer(mFrames[i].rayGenConstantsBuffer);
         }
     });
 }

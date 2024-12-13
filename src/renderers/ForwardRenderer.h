@@ -1,12 +1,10 @@
 #ifndef _INCLUDE_FORWARDRENDERER_H
 #define _INCLUDE_FORWARDRENDERER_H
-#include <vulkan/vulkan_core.h>
-#include "application/Layer.h"
 #include "hatpch.h"
 
 #include "application/Constants.h"
+#include "application/Renderer.h"
 #include "geometry/Model.h"
-#include "renderers/layers/AabbLayer.h"
 #include "scene/Camera.h"
 #include "scene/Scene.h"
 #include "texture/Texture.h"
@@ -23,12 +21,12 @@
 namespace hatgpu
 {
 
-class ForwardRenderer : public Layer
+class ForwardRenderer : public Renderer
 {
   public:
     ForwardRenderer(std::shared_ptr<vk::Ctx> ctx, std::shared_ptr<Scene> scene);
 
-    void OnAttach() override;
+    virtual void Init() override;
     void OnDetach() override;
     void OnRender(DrawCtx &drawCtx) override;
     void OnImGuiRender() override;

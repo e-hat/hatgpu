@@ -38,6 +38,7 @@ layout (std140, set = 0, binding = 3) readonly buffer LightBuffer
 layout (set = 1, binding = 0) uniform sampler2D albedoTexture;
 layout (set = 1, binding = 1) uniform sampler2D metalnessRoughnessTexture;
 
+// uses a "physically-based" shading model
 float DistributionGGX(vec3 N, vec3 H, float roughness);
 float GeometrySchlickGGX(float NdotV, float roughness);
 float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness);
@@ -49,6 +50,7 @@ vec3 reinhardTonemap(vec3 v);
 const float PI = 3.14159265359;
 const float gamma = 1.8;
 const float exposure = 1.0;
+const vec3 ambient = vec3(0.2);
 
 void main()
 {
@@ -125,7 +127,7 @@ void main()
         Lo += (kD * albedo / PI + specular) * radiance * NdotL;
     }
 
-    vec3 ambient = vec3(0.1) * albedo;
+    vec3 ambient = ambient * albedo;
     vec3 color = ambient + Lo;
 
     color = reinhardTonemap(color);

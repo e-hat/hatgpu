@@ -3,11 +3,13 @@
 #include "hatpch.h"
 
 #include "application/DrawCtx.h"
+#include "application/Layer.h"
+#include "geometry/Aabb.h"
 #include "scene/Scene.h"
 
-#include "application/Layer.h"
 #include "vk/ctx.h"
 #include "vk/deleter.h"
+#include "vk/types.h"
 
 namespace hatgpu
 {
@@ -19,16 +21,24 @@ class AabbLayer : public Layer
         : Layer("AabbLayer", ctx, scene)
     {}
 
-    void OnAttach() override;
+    void Init() override;
     void OnDetach() override;
     void OnRender(DrawCtx &drawCtx) override;
     void OnImGuiRender() override;
 
-    const static LayerRequirements kRequirements;
+    static const LayerRequirements kRequirements;
 
   private:
+    void createGeometry();
+    void uploadGeometry();
+
     VkPipelineLayout mLayout;
     VkPipeline mPipeline;
+
+    std::vector<glm::vec4> mVertices;
+    std::vector<Mesh::IndexType> mIndices;
+    vk::AllocatedBuffer mVertexBuffer;
+    vk::AllocatedBuffer mIndexBuffer;
 };
 
 }  // namespace hatgpu

@@ -5,7 +5,7 @@
 #include "hatpch.h"
 #include "renderers/BdptRenderer.h"
 #include "renderers/ForwardRenderer.h"
-#include "renderers/layers/AabbLayer.h"
+#include "renderers/overlays/AabbLayer.h"
 
 #include "Layer.h"
 #include "application/InputManager.h"
@@ -49,6 +49,12 @@ class Application
 
   protected:
     LayerStack mLayerStack;
+    enum class RendererOption
+    {
+        kForwardRenderer,
+        kBdptRenderer,
+    };
+    RendererOption mSelectedRendererOption{RendererOption::kForwardRenderer};
     std::vector<std::shared_ptr<Layer>> mLayers;
     std::shared_ptr<ForwardRenderer> mForwardRenderer;
     std::shared_ptr<BdptRenderer> mBdptRenderer;
@@ -61,20 +67,19 @@ class Application
 
     void immediateSubmit(std::function<void(VkCommandBuffer)> &&function);
 
-    void PushLayer(std::shared_ptr<Layer> layer)
+    void SetRenderer(std::shared_ptr<Renderer> newRenderer)
     {
-        layer->OnAttach();
-        mLayerStack.PushLayer(std::move(layer));
+        if (auto oldRenderer = mLayerStack.renderer(); oldRenderer.has_value())
+        {
+            (*oldRenderer)->OnDetach();
+        }
+        newRenderer->OnAttach();
+        mLayerStack.SetRenderer(std::move(newRenderer));
     }
     void PushOverlay(std::shared_ptr<Layer> layer)
     {
         layer->OnAttach();
         mLayerStack.PushOverlay(std::move(layer));
-    }
-    void PopLayer(std::shared_ptr<Layer> layer)
-    {
-        layer->OnDetach();
-        mLayerStack.PopLayer(std::move(layer));
     }
     void PopOverlay(std::shared_ptr<Layer> layer)
     {

@@ -302,14 +302,12 @@ void Application::Init()
     }
 
     // Set up initial layer state
-    PushLayer(mForwardRenderer);
-    PushLayer(mAabbLayer);
-    // PushLayer(mBdptRenderer);
+    SetRenderer(mForwardRenderer);
+    PushOverlay(mAabbLayer);
 
     mDeleter.enqueue([this]() {
         for (const auto &layer : mLayers)
         {
-            H_LOG(std::format("Destroying layer '{}'", layer->DebugName().c_str()))
             layer->FlushDeletionQueue();
         }
     });
@@ -521,7 +519,25 @@ void Application::renderImGui(VkCommandBuffer commandBuffer)
 
 void Application::OnImGuiRender()
 {
-    ImGui::Text("hih");
+    int choice = static_cast<int>(mSelectedRendererOption);
+    ImGui::RadioButton("Forward renderer", &choice,
+                       static_cast<int>(RendererOption::kForwardRenderer));
+    ImGui::SameLine();
+    ImGui::RadioButton("Bdpt renderer", &choice, static_cast<int>(RendererOption::kBdptRenderer));
+
+    if (static_cast<RendererOption>(choice) != mSelectedRendererOption)
+    {
+        mSelectedRendererOption = static_cast<RendererOption>(choice);
+        switch (mSelectedRendererOption)
+        {
+            case RendererOption::kForwardRenderer:
+                SetRenderer(mForwardRenderer);
+                break;
+            case RendererOption::kBdptRenderer:
+                SetRenderer(mBdptRenderer);
+                break;
+        }
+    }
 }
 
 void Application::Run()

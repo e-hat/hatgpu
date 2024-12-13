@@ -34,7 +34,8 @@ VkPipelineShaderStageCreateInfo pipelineShaderStageInfo(VkShaderStageFlagBits st
 
 VkPipelineVertexInputStateCreateInfo vertexInputInfo();
 
-VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo(VkPrimitiveTopology topology);
+VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo(
+    VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 
 VkPipelineRasterizationStateCreateInfo rasterizationInfo(VkPolygonMode polygonMode);
 
